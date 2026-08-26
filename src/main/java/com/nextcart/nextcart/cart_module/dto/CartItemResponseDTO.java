@@ -4,25 +4,24 @@ import lombok.*;
 
 import java.math.BigDecimal;
 
-@Data
 @Getter
 @Setter
-@Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class CartItemResponseDTO {
 
     private Long id;
 
     private Long productId;
 
+    private Long productVariantId;
+
     private String productName;
-
-    private String productImage;
-
-    private BigDecimal price;
 
     private Integer quantity;
 
-    private BigDecimal itemTotal;
+    private BigDecimal unitPrice;
+
+    private BigDecimal lineTotal;
 }

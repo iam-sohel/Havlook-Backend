@@ -3,27 +3,24 @@ package com.nextcart.nextcart.cart_module.dto;
 import lombok.*;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.List;
 
-@Data
 @Getter
 @Setter
-@Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class CartResponseDTO {
 
     private Long id;
 
-    private Long userId;
-
-    private String sessionId;
-
-    @Builder.Default
-    private List<CartItemResponseDTO> items = new ArrayList<>();
+    private List<CartItemResponseDTO> items;
 
     private Integer totalItems;
 
-    private BigDecimal grandTotal;
+    private BigDecimal productPrice;
+
+    private BigDecimal totalDiscount;
+
+    private BigDecimal orderTotal;
 }
