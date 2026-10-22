@@ -1,3 +1,4 @@
+
 package com.gesmio.havlook.cart_module.dto;
 
 import lombok.*;
@@ -24,6 +25,11 @@ public class CartResponseDTO {
     private BigDecimal totalDiscount;
 
     private BigDecimal orderTotal;
+
+    /**
+     * Delivery charge calculated from active delivery rules.
+     */
+    private BigDecimal deliveryCharge;
 
     private String currency;
 }
