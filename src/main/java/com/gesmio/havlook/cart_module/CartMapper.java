@@ -1,3 +1,4 @@
+
 package com.gesmio.havlook.cart_module;
 
 import com.gesmio.havlook.cart_module.dto.CartItemResponseDTO;
@@ -50,6 +51,7 @@ public class CartMapper {
             BigDecimal productPrice,
             BigDecimal totalDiscount,
             BigDecimal orderTotal,
+            BigDecimal deliveryCharge,
             String currency) {
 
         return CartResponseDTO.builder()
@@ -59,6 +61,7 @@ public class CartMapper {
                 .productPrice(productPrice)
                 .totalDiscount(totalDiscount)
                 .orderTotal(orderTotal)
+                .deliveryCharge(deliveryCharge)
                 .currency(currency)
                 .build();
     }

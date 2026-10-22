@@ -23,6 +23,7 @@ import com.gesmio.havlook.customer_module.repository.CustomerRepository;
 import com.gesmio.havlook.discount_module.DiscountType;
 import com.gesmio.havlook.discount_module.ProductVariantDiscountEntity;
 import com.gesmio.havlook.discount_module.ProductVariantDiscountRepository;
+import com.gesmio.havlook.delivery_module.service.DeliveryService;
 import com.gesmio.havlook.product_module.productPrice.entity.ProductVariantPriceEntity;
 import com.gesmio.havlook.product_module.productPrice.repository.ProductVariantPriceRepository;
 import com.gesmio.havlook.product_module.productVariant.entity.ProductVariantEntity;
@@ -50,12 +51,6 @@ public class CheckoutServiceImpl implements CheckoutService {
 
     private static final String CURRENCY = "INR";
 
-    private static final BigDecimal DEFAULT_DELIVERY_CHARGE =
-            BigDecimal.ZERO.setScale(
-                    MONEY_SCALE,
-                    RoundingMode.HALF_UP
-            );
-
     private final CartRepository cartRepository;
 
     private final UserRepository userRepository;
@@ -71,6 +66,8 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final ProductVariantDiscountRepository productVariantDiscountRepository;
 
     private final InventoryService inventoryService;
+
+    private final DeliveryService deliveryService;
 
     // =========================================================
     // CHECKOUT PREVIEW
@@ -429,7 +426,7 @@ public class CheckoutServiceImpl implements CheckoutService {
 
         BigDecimal deliveryCharge =
                 money(
-                        DEFAULT_DELIVERY_CHARGE
+                        deliveryService.calculateDeliveryFee(orderTotal)
                 );
 
         BigDecimal finalOrderTotal =
