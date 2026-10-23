@@ -1,3 +1,4 @@
+
 package com.gesmio.havlook.seller_module.sellerKyc.controller;
 
 import com.gesmio.havlook.auth_module.security.CustomUserDetails;
@@ -26,113 +27,79 @@ public class SellerKycController {
 
     private final SellerKycService sellerKycService;
 
-    // =========================================================
     // SUBMIT KYC DETAILS
-    // =========================================================
-
     @PostMapping
     public ResponseEntity<CommonResponseDto<SellerKycResponse>> submitKyc(
             Authentication authentication,
             @Valid @RequestBody SellerKycRequest request
     ) {
-
         Long userId = getUserId(authentication);
 
         SellerKycResponse response =
-                sellerKycService.submitKyc(
-                        userId,
-                        request
-                );
+                sellerKycService.submitKyc(userId, request);
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(
-                        new CommonResponseDto<>(
-                                true,
-                                "KYC details submitted successfully",
-                                response
-                        )
-                );
+                .body(new CommonResponseDto<>(
+                        true,
+                        "KYC details submitted successfully",
+                        response
+                ));
     }
 
-    // =========================================================
     // GET MY KYC
-    // =========================================================
-
     @GetMapping
     public ResponseEntity<CommonResponseDto<SellerKycResponse>> getMyKyc(
             Authentication authentication
     ) {
-
         Long userId = getUserId(authentication);
 
         SellerKycResponse response =
                 sellerKycService.getMyKyc(userId);
 
-        return ResponseEntity.ok(
-                new CommonResponseDto<>(
-                        true,
-                        "KYC details retrieved successfully",
-                        response
-                )
-        );
+        return ResponseEntity.ok(new CommonResponseDto<>(
+                true,
+                "KYC details retrieved successfully",
+                response
+        ));
     }
 
-    // =========================================================
     // UPDATE KYC
-    // =========================================================
-
     @PutMapping
     public ResponseEntity<CommonResponseDto<SellerKycResponse>> updateKyc(
             Authentication authentication,
             @Valid @RequestBody SellerKycRequest request
     ) {
-
         Long userId = getUserId(authentication);
 
         SellerKycResponse response =
-                sellerKycService.updateKyc(
-                        userId,
-                        request
-                );
+                sellerKycService.updateKyc(userId, request);
 
-        return ResponseEntity.ok(
-                new CommonResponseDto<>(
-                        true,
-                        "KYC details updated successfully",
-                        response
-                )
-        );
+        return ResponseEntity.ok(new CommonResponseDto<>(
+                true,
+                "KYC details updated successfully",
+                response
+        ));
     }
 
-    // =========================================================
     // GET KYC STATUS
-    // =========================================================
-
     @GetMapping("/status")
-    public ResponseEntity<CommonResponseDto<SellerKycResponse>>
-    getKycStatus(
+    public ResponseEntity<CommonResponseDto<SellerKycResponse>> getKycStatus(
             Authentication authentication
     ) {
-
         Long userId = getUserId(authentication);
 
         SellerKycResponse response =
                 sellerKycService.getKycStatus(userId);
 
-        return ResponseEntity.ok(
-                new CommonResponseDto<>(
-                        true,
-                        "KYC status retrieved successfully",
-                        response
-                )
-        );
+        return ResponseEntity.ok(new CommonResponseDto<>(
+                true,
+                "KYC status retrieved successfully",
+                response
+        ));
     }
 
-    // =========================================================
     // UPLOAD KYC DOCUMENTS
-    // =========================================================
-
     @PostMapping(
             value = "/documents",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE
@@ -140,38 +107,17 @@ public class SellerKycController {
     public ResponseEntity<CommonResponseDto<SellerKycResponse>>
     uploadKycDocuments(
             Authentication authentication,
-
-            @RequestPart(
-                    value = "panDocument",
-                    required = false
-            )
+            @RequestPart(value = "panDocument", required = false)
             MultipartFile panDocument,
-
-            @RequestPart(
-                    value = "aadhaarDocument",
-                    required = false
-            )
+            @RequestPart(value = "aadhaarDocument", required = false)
             MultipartFile aadhaarDocument,
-
-            @RequestPart(
-                    value = "gstDocument",
-                    required = false
-            )
+            @RequestPart(value = "gstDocument", required = false)
             MultipartFile gstDocument,
-
-            @RequestPart(
-                    value = "registrationDocument",
-                    required = false
-            )
+            @RequestPart(value = "registrationDocument", required = false)
             MultipartFile registrationDocument,
-
-            @RequestPart(
-                    value = "addressDocument",
-                    required = false
-            )
+            @RequestPart(value = "addressDocument", required = false)
             MultipartFile addressDocument
     ) {
-
         Long userId = getUserId(authentication);
 
         SellerKycResponse response =
@@ -184,36 +130,47 @@ public class SellerKycController {
                         addressDocument
                 );
 
-        return ResponseEntity.ok(
-                new CommonResponseDto<>(
-                        true,
-                        "KYC documents uploaded successfully",
-                        response
-                )
-        );
+        return ResponseEntity.ok(new CommonResponseDto<>(
+                true,
+                "KYC documents uploaded successfully",
+                response
+        ));
     }
 
-    // =========================================================
-    // GET AUTHENTICATED USER ID
-    // =========================================================
-
-    private Long getUserId(
-            Authentication authentication
+    // GET SIGNED DOCUMENT URL
+    @GetMapping("/documents/{documentType}/signed-url")
+    public ResponseEntity<CommonResponseDto<String>> getSignedDocumentUrl(
+            Authentication authentication,
+            @PathVariable String documentType
     ) {
+        Long userId = getUserId(authentication);
+
+        String signedUrl =
+                sellerKycService.getSignedDocumentUrl(
+                        userId,
+                        documentType
+                );
+
+        return ResponseEntity.ok(new CommonResponseDto<>(
+                true,
+                "Document URL generated successfully",
+                signedUrl
+        ));
+    }
+
+    // GET AUTHENTICATED USER ID
+    private Long getUserId(Authentication authentication) {
 
         if (authentication == null
                 || !authentication.isAuthenticated()) {
-
             throw new AccessDeniedException(
                     "Authentication required"
             );
         }
 
-        Object principal =
-                authentication.getPrincipal();
+        Object principal = authentication.getPrincipal();
 
         if (principal instanceof CustomUserDetails userDetails) {
-
             Long userId = userDetails.getUserId();
 
             if (userId == null || userId <= 0) {
@@ -226,9 +183,7 @@ public class SellerKycController {
         }
 
         try {
-
-            Long userId =
-                    Long.valueOf(authentication.getName());
+            Long userId = Long.valueOf(authentication.getName());
 
             if (userId <= 0) {
                 throw new AccessDeniedException(
@@ -239,7 +194,6 @@ public class SellerKycController {
             return userId;
 
         } catch (NumberFormatException ex) {
-
             throw new AccessDeniedException(
                     "Authenticated user ID is invalid"
             );
