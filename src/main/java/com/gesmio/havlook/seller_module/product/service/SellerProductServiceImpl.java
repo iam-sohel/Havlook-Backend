@@ -57,6 +57,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.net.URI;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.HashSet;
@@ -99,17 +100,12 @@ public class SellerProductServiceImpl implements SellerProductService {
     @Value("${supabase.product-bucket:product-images}")
     private String productBucket;
 
-    // =========================================================
-    // CREATE COMPLETE PRODUCT
-    // =========================================================
-
     @Override
     public SellerProductResponse createProduct(
             Long userId,
             SellerProductCreateRequest request,
             MultipartFile[] images
     ) {
-
         validateUserId(userId);
 
         if (request == null) {
@@ -119,10 +115,6 @@ public class SellerProductServiceImpl implements SellerProductService {
         }
 
         Seller seller = getSellerByUserId(userId);
-
-        // -----------------------------------------------------
-        // CATEGORY
-        // -----------------------------------------------------
 
         Category category = categoryRepository
                 .findByIdAndStatus(
@@ -135,10 +127,6 @@ public class SellerProductServiceImpl implements SellerProductService {
                         )
                 );
 
-        // -----------------------------------------------------
-        // SUB CATEGORY
-        // -----------------------------------------------------
-
         SubCategory subCategory = subCategoryRepository
                 .findByIdAndStatus(
                         request.getSubCategoryId(),
@@ -150,38 +138,29 @@ public class SellerProductServiceImpl implements SellerProductService {
                         )
                 );
 
-        // -----------------------------------------------------
-        // VERIFY SUBCATEGORY BELONGS TO CATEGORY
-        // -----------------------------------------------------
-
         if (subCategory.getCategory() == null ||
                 !subCategory.getCategory()
                         .getId()
                         .equals(category.getId())) {
-
             throw new SellerProductValidationException(
                     "Subcategory does not belong to selected category"
             );
         }
 
-        // -----------------------------------------------------
-        // BRAND
-        // -----------------------------------------------------
+        Brand brand = null;
 
-        Brand brand = brandRepository
-                .findByIdAndStatus(
-                        request.getBrandId(),
-                        BrandStatus.ACTIVE
-                )
-                .orElseThrow(() ->
-                        new SellerProductValidationException(
-                                "Active brand not found"
-                        )
-                );
-
-        // -----------------------------------------------------
-        // SLUG
-        // -----------------------------------------------------
+        if (request.getBrandId() != null && request.getBrandId() > 0) {
+            brand = brandRepository
+                    .findByIdAndStatus(
+                            request.getBrandId(),
+                            BrandStatus.ACTIVE
+                    )
+                    .orElseThrow(() ->
+                            new SellerProductValidationException(
+                                    "Active brand not found"
+                            )
+                    );
+        }
 
         String slug = normalizeRequired(
                 request.getSlug(),
@@ -194,26 +173,12 @@ public class SellerProductServiceImpl implements SellerProductService {
             );
         }
 
-        // -----------------------------------------------------
-        // VALIDATE PRODUCT DATA
-        // -----------------------------------------------------
-
         String productName = normalizeRequired(
                 request.getName(),
                 "Product name"
         );
-
-        validateSpecifications(
-                request.getSpecifications()
-        );
-
-        validateVariants(
-                request.getVariants()
-        );
-
-        // -----------------------------------------------------
-        // CREATE PRODUCT
-        // -----------------------------------------------------
+        validateSpecifications(request.getSpecifications());
+        validateVariants(request.getVariants());
 
         ProductEntity product = ProductEntity.builder()
                 .seller(seller)
@@ -228,12 +193,7 @@ public class SellerProductServiceImpl implements SellerProductService {
 
         product = productRepository.save(product);
 
-        // -----------------------------------------------------
-        // PRODUCT INFORMATION
-        // -----------------------------------------------------
-
         if (request.getInformation() != null) {
-
             ProductInformationEntity information =
                     ProductInformationEntity.builder()
                             .productEntity(product)
@@ -257,10 +217,6 @@ public class SellerProductServiceImpl implements SellerProductService {
 
             productInformationRepository.save(information);
         }
-
-        // -----------------------------------------------------
-        // PRODUCT SPECIFICATIONS
-        // -----------------------------------------------------
 
         if (request.getSpecifications() != null &&
                 !request.getSpecifications().isEmpty()) {
@@ -287,92 +243,87 @@ public class SellerProductServiceImpl implements SellerProductService {
                                 )
                                 .build();
 
-                productSpecificationRepository.save(
-                        specification
-                );
+                productSpecificationRepository.save(specification);
             }
         }
-
-        // -----------------------------------------------------
-        // PRODUCT VARIANTS
-        // -----------------------------------------------------
 
         if (request.getVariants() != null &&
                 !request.getVariants().isEmpty()) {
 
             for (SellerProductVariantRequest variantRequest
                     : request.getVariants()) {
-
-                createVariant(
-                        product,
-                        seller,
-                        variantRequest
-                );
+                createVariant(product, seller, variantRequest);
             }
         }
 
-        // -----------------------------------------------------
-        // PRODUCT IMAGES
-        // -----------------------------------------------------
+        // Save image URLs supplied in the product JSON.
+        boolean primaryImageAssigned = false;
 
-        if (images != null &&
-                images.length > 0) {
+        if (request.getImages() != null &&
+                !request.getImages().isEmpty()) {
 
+            int displayOrder = 0;
+
+            for (String imageUrl : request.getImages()) {
+
+                if (imageUrl == null || imageUrl.isBlank()) {
+                    continue;
+                }
+
+                String validatedUrl = validateImageUrl(imageUrl);
+
+                ProductImageEntity imageEntity =
+                        ProductImageEntity.builder()
+                                .productEntity(product)
+                                .imageUrl(validatedUrl)
+                                .isPrimary(!primaryImageAssigned)
+                                .displayOrder(displayOrder++)
+                                .build();
+
+                productImageRepository.save(imageEntity);
+                primaryImageAssigned = true;
+            }
+        }
+
+        // Keep existing multipart image upload support.
+        if (images != null && images.length > 0) {
             uploadProductImages(
                     product,
                     seller,
-                    images
+                    images,
+                    primaryImageAssigned
             );
         }
 
-        // -----------------------------------------------------
-        // RETURN COMPLETE RESPONSE
-        // -----------------------------------------------------
-
         return mapToResponse(product);
     }
-
-    // =========================================================
-    // CREATE VARIANT
-    // =========================================================
 
     private ProductVariantEntity createVariant(
             ProductEntity product,
             Seller seller,
             SellerProductVariantRequest request
     ) {
-
         if (request == null) {
             throw new SellerProductValidationException(
                     "Product variant data is required"
             );
         }
 
-        String sku = normalizeRequired(
-                request.getSku(),
-                "SKU"
-        );
+        String sku = normalizeRequired(request.getSku(), "SKU");
 
-        if (productVariantRepository
-                .existsBySkuIgnoreCase(sku)) {
-
+        if (productVariantRepository.existsBySkuIgnoreCase(sku)) {
             throw new SellerProductVariantAlreadyExistsException(
                     "SKU already exists: " + sku
             );
         }
 
-        validateVariantAttributes(
-                request.getAttributes()
-        );
+        validateVariantAttributes(request.getAttributes());
 
         if (request.getPrice() != null) {
             validatePrice(request.getPrice());
         }
 
-        validateInventories(
-                seller,
-                request.getInventories()
-        );
+        validateInventories(seller, request.getInventories());
 
         ProductVariantEntity variant =
                 ProductVariantEntity.builder()
@@ -382,10 +333,6 @@ public class SellerProductServiceImpl implements SellerProductService {
                         .build();
 
         variant = productVariantRepository.save(variant);
-
-        // -----------------------------------------------------
-        // SAVE ATTRIBUTES
-        // -----------------------------------------------------
 
         for (SellerProductVariantAttributeRequest attributeRequest
                 : request.getAttributes()) {
@@ -401,15 +348,13 @@ public class SellerProductServiceImpl implements SellerProductService {
                             .variant(variant)
                             .attributeName(
                                     normalizeRequired(
-                                            attributeRequest
-                                                    .getAttributeName(),
+                                            attributeRequest.getAttributeName(),
                                             "Attribute name"
                                     )
                             )
                             .attributeValue(
                                     normalizeRequired(
-                                            attributeRequest
-                                                    .getAttributeValue(),
+                                            attributeRequest.getAttributeValue(),
                                             "Attribute value"
                                     )
                             )
@@ -418,20 +363,14 @@ public class SellerProductServiceImpl implements SellerProductService {
             variantAttributeRepository.save(attribute);
         }
 
-        // -----------------------------------------------------
-        // SAVE PRICE
-        // -----------------------------------------------------
-
         if (request.getPrice() != null) {
-
             SellerProductVariantPriceRequest priceRequest =
                     request.getPrice();
 
-            BigDecimal discount =
-                    calculateDiscountPercentage(
-                            priceRequest.getMrp(),
-                            priceRequest.getSellingPrice()
-                    );
+            BigDecimal discount = calculateDiscountPercentage(
+                    priceRequest.getMrp(),
+                    priceRequest.getSellingPrice()
+            );
 
             String currency = normalizeRequired(
                     priceRequest.getCurrency(),
@@ -442,9 +381,7 @@ public class SellerProductServiceImpl implements SellerProductService {
                     ProductVariantPriceEntity.builder()
                             .productVariant(variant)
                             .mrp(priceRequest.getMrp())
-                            .sellingPrice(
-                                    priceRequest.getSellingPrice()
-                            )
+                            .sellingPrice(priceRequest.getSellingPrice())
                             .discountPercentage(discount)
                             .currency(currency)
                             .effectiveFrom(
@@ -454,10 +391,6 @@ public class SellerProductServiceImpl implements SellerProductService {
 
             productVariantPriceRepository.save(price);
         }
-
-        // -----------------------------------------------------
-        // SAVE INVENTORY
-        // -----------------------------------------------------
 
         if (request.getInventories() != null &&
                 !request.getInventories().isEmpty()) {
@@ -482,52 +415,37 @@ public class SellerProductServiceImpl implements SellerProductService {
         return variant;
     }
 
-    // =========================================================
-    // CREATE INVENTORY ITEM
-    // =========================================================
-
     private InventoryItem createInventoryItem(
             Seller seller,
             ProductVariantEntity variant,
             SellerProductInventoryRequest request
     ) {
-
         if (request == null) {
             throw new SellerProductInventoryException(
                     "Inventory data is required"
             );
         }
 
-        Warehouse warehouse =
-                warehouseRepository
-                        .findByIdAndSeller(
-                                request.getWarehouseId(),
-                                seller
+        Warehouse warehouse = warehouseRepository
+                .findByIdAndSeller(request.getWarehouseId(), seller)
+                .orElseThrow(() ->
+                        new SellerProductWarehouseException(
+                                "Warehouse not found or does not belong to seller: "
+                                        + request.getWarehouseId()
                         )
-                        .orElseThrow(() ->
-                                new SellerProductWarehouseException(
-                                        "Warehouse not found or does not belong to seller: "
-                                                + request.getWarehouseId()
-                                )
-                        );
+                );
 
         if (warehouse.getStatus() != WarehouseStatus.ACTIVE) {
-
             throw new SellerProductWarehouseException(
-                    "Warehouse is not active: "
-                            + warehouse.getId()
+                    "Warehouse is not active: " + warehouse.getId()
             );
         }
 
-        int quantity =
-                request.getQuantity() == null
-                        ? 0
-                        : request.getQuantity();
+        int quantity = request.getQuantity() == null
+                ? 0 : request.getQuantity();
 
-        int reserved =
-                request.getReservedQuantity() == null
-                        ? 0
-                        : request.getReservedQuantity();
+        int reserved = request.getReservedQuantity() == null
+                ? 0 : request.getReservedQuantity();
 
         if (quantity < 0 || reserved < 0) {
             throw new SellerProductInventoryException(
@@ -543,93 +461,101 @@ public class SellerProductServiceImpl implements SellerProductService {
 
         int available = quantity - reserved;
 
-        Inventory inventory =
-                inventoryRepository
-                        .findByWarehouse(warehouse)
-                        .orElseGet(() ->
-                                inventoryRepository.save(
-                                        Inventory.builder()
-                                                .warehouse(warehouse)
-                                                .build()
-                                )
-                        );
+        Inventory inventory = inventoryRepository
+                .findByWarehouse(warehouse)
+                .orElseGet(() ->
+                        inventoryRepository.save(
+                                Inventory.builder()
+                                        .warehouse(warehouse)
+                                        .build()
+                        )
+                );
 
         if (inventoryItemRepository
                 .existsByInventoryIdAndProductVariantId(
                         inventory.getId(),
                         variant.getId()
                 )) {
-
             throw new SellerProductInventoryException(
                     "Product variant already exists in warehouse: "
                             + warehouse.getId()
             );
         }
 
-        InventoryItem item =
-                InventoryItem.builder()
-                        .inventory(inventory)
-                        .productVariant(variant)
-                        .availableStock(available)
-                        .reservedStock(reserved)
-                        .build();
+        InventoryItem item = InventoryItem.builder()
+                .inventory(inventory)
+                .productVariant(variant)
+                .availableStock(available)
+                .reservedStock(reserved)
+                .build();
 
         return inventoryItemRepository.save(item);
     }
 
-    // =========================================================
-    // IMAGE UPLOAD
-    // =========================================================
-
     private void uploadProductImages(
             ProductEntity product,
             Seller seller,
-            MultipartFile[] images
+            MultipartFile[] images,
+            boolean primaryAlreadyAssigned
     ) {
+        boolean primaryAssigned = primaryAlreadyAssigned;
 
-        boolean primaryAssigned = false;
+        int displayOrder = productImageRepository
+                .findByProductEntity_IdOrderByDisplayOrderAsc(
+                        product.getId()
+                )
+                .size();
 
-        for (int i = 0; i < images.length; i++) {
-
-            MultipartFile image = images[i];
-
+        for (MultipartFile image : images) {
             validateImage(image);
 
-            String objectPath =
-                    seller.getId()
-                            + "/products/"
-                            + product.getId()
-                            + "/"
-                            + UUID.randomUUID()
-                            + getExtension(image);
+            String objectPath = seller.getId()
+                    + "/products/"
+                    + product.getId()
+                    + "/"
+                    + UUID.randomUUID()
+                    + getExtension(image);
 
-            String imageUrl =
-                    uploadToSupabase(
-                            image,
-                            objectPath
-                    );
-
-            boolean isPrimary = !primaryAssigned;
-
-            if (isPrimary) {
-                primaryAssigned = true;
-            }
+            String imageUrl = uploadToSupabase(image, objectPath);
 
             ProductImageEntity imageEntity =
                     ProductImageEntity.builder()
                             .productEntity(product)
                             .imageUrl(imageUrl)
-                            .isPrimary(isPrimary)
-                            .displayOrder(i)
+                            .isPrimary(!primaryAssigned)
+                            .displayOrder(displayOrder++)
                             .build();
 
             productImageRepository.save(imageEntity);
+            primaryAssigned = true;
         }
     }
 
-    // =========================================================
-    // SUPABASE IMAGE UPLOAD
-    // =========================================================
+    private String validateImageUrl(String imageUrl) {
+        String trimmedUrl = imageUrl.trim();
+
+        try {
+            URI uri = URI.create(trimmedUrl);
+            String scheme = uri.getScheme();
+
+            if (scheme == null
+                    || !("https".equalsIgnoreCase(scheme)
+                    || "http".equalsIgnoreCase(scheme))
+                    || uri.getHost() == null
+                    || uri.getUserInfo() != null) {
+                throw new SellerProductImageException(
+                        "Invalid product image URL: " + trimmedUrl
+                );
+            }
+
+            return uri.toASCIIString();
+
+        } catch (IllegalArgumentException ex) {
+            throw new SellerProductImageException(
+                    "Invalid product image URL: " + trimmedUrl
+            );
+        }
+    }
 
     private String uploadToSupabase(
             MultipartFile file,
@@ -637,35 +563,55 @@ public class SellerProductServiceImpl implements SellerProductService {
     ) {
         try {
             if (supabaseUrl == null || supabaseUrl.isBlank()) {
-                throw new SellerProductImageException("Supabase URL is not configured");
-            }
-            if (supabaseSecretKey == null || supabaseSecretKey.isBlank()) {
-                throw new SellerProductImageException("Supabase secret key is not configured");
-            }
-            if (supabaseStorageAuthorizationKey == null || supabaseStorageAuthorizationKey.isBlank()) {
-                throw new SellerProductImageException("Supabase storage authorization key is not configured");
-            }
-            if (productBucket == null || productBucket.isBlank()) {
-                throw new SellerProductImageException("Product image bucket is not configured");
+                throw new SellerProductImageException(
+                        "Supabase URL is not configured"
+                );
             }
 
-            String cleanSupabaseUrl = supabaseUrl.trim().replaceAll("/+$", "");
+            if (supabaseSecretKey == null || supabaseSecretKey.isBlank()) {
+                throw new SellerProductImageException(
+                        "Supabase secret key is not configured"
+                );
+            }
+
+            if (supabaseStorageAuthorizationKey == null
+                    || supabaseStorageAuthorizationKey.isBlank()) {
+                throw new SellerProductImageException(
+                        "Supabase storage authorization key is not configured"
+                );
+            }
+
+            if (productBucket == null || productBucket.isBlank()) {
+                throw new SellerProductImageException(
+                        "Product image bucket is not configured"
+                );
+            }
+
+            String cleanSupabaseUrl =
+                    supabaseUrl.trim().replaceAll("/+$", "");
             String apiKey = supabaseSecretKey.trim();
-            String authorizationKey = supabaseStorageAuthorizationKey.trim();
+            String authorizationKey =
+                    supabaseStorageAuthorizationKey.trim();
             String cleanBucket = productBucket.trim();
 
             if (objectPath == null || objectPath.trim().isEmpty()) {
-                throw new SellerProductImageException("Product image object path is required");
+                throw new SellerProductImageException(
+                        "Product image object path is required"
+                );
             }
 
             String cleanObjectPath = objectPath.trim();
 
             if (!apiKey.startsWith("sb_secret_")) {
-                throw new SellerProductImageException("Invalid Supabase secret key configuration");
+                throw new SellerProductImageException(
+                        "Invalid Supabase secret key configuration"
+                );
             }
 
             if (!authorizationKey.startsWith("eyJ")) {
-                throw new SellerProductImageException("Invalid Supabase storage authorization key configuration");
+                throw new SellerProductImageException(
+                        "Invalid Supabase storage authorization key configuration"
+                );
             }
 
             String uploadUrl = cleanSupabaseUrl
@@ -675,6 +621,7 @@ public class SellerProductServiceImpl implements SellerProductService {
                     + cleanObjectPath;
 
             HttpHeaders headers = new HttpHeaders();
+
             String contentType = file.getContentType();
 
             if (contentType == null || contentType.trim().isEmpty()) {
@@ -683,19 +630,21 @@ public class SellerProductServiceImpl implements SellerProductService {
 
             headers.setContentType(MediaType.parseMediaType(contentType));
             headers.set("apikey", apiKey);
-            headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + authorizationKey);
+            headers.set(
+                    HttpHeaders.AUTHORIZATION,
+                    "Bearer " + authorizationKey
+            );
             headers.set("x-upsert", "false");
 
             HttpEntity<byte[]> requestEntity =
                     new HttpEntity<>(file.getBytes(), headers);
 
-            ResponseEntity<String> response =
-                    restTemplate.exchange(
-                            uploadUrl,
-                            HttpMethod.POST,
-                            requestEntity,
-                            String.class
-                    );
+            ResponseEntity<String> response = restTemplate.exchange(
+                    uploadUrl,
+                    HttpMethod.POST,
+                    requestEntity,
+                    String.class
+            );
 
             if (!response.getStatusCode().is2xxSuccessful()) {
                 throw new SellerProductImageException(
@@ -735,214 +684,128 @@ public class SellerProductServiceImpl implements SellerProductService {
         }
     }
 
-    // =========================================================
-    // IMAGE VALIDATION
-    // =========================================================
-
-    private void validateImage(
-            MultipartFile image
-    ) {
-
-        if (image == null ||
-                image.isEmpty()) {
-
+    private void validateImage(MultipartFile image) {
+        if (image == null || image.isEmpty()) {
             throw new SellerProductImageException(
                     "Product image cannot be empty"
             );
         }
 
-        String contentType =
-                image.getContentType();
+        String contentType = image.getContentType();
 
         if (contentType == null ||
-                !contentType
-                        .toLowerCase(Locale.ROOT)
-                        .startsWith("image/")) {
-
+                !contentType.toLowerCase(Locale.ROOT).startsWith("image/")) {
             throw new SellerProductImageException(
                     "Only image files are allowed"
             );
         }
 
-        // 5 MB maximum per image
-        long maxSize =
-                5L * 1024L * 1024L;
+        long maxSize = 5L * 1024L * 1024L;
 
         if (image.getSize() > maxSize) {
-
             throw new SellerProductImageException(
                     "Product image size must not exceed 5 MB"
             );
         }
     }
 
-    // =========================================================
-    // VALIDATE PRICE
-    // =========================================================
-
-    private void validatePrice(
-            SellerProductVariantPriceRequest price
-    ) {
-
+    private void validatePrice(SellerProductVariantPriceRequest price) {
         if (price == null) {
-
             throw new SellerProductPriceException(
                     "Price data is required"
             );
         }
 
-        if (price.getMrp() == null ||
-                price.getSellingPrice() == null) {
-
+        if (price.getMrp() == null || price.getSellingPrice() == null) {
             throw new SellerProductPriceException(
                     "MRP and selling price are required"
             );
         }
 
-        if (price.getMrp().compareTo(
-                price.getSellingPrice()
-        ) < 0) {
-
+        if (price.getMrp().compareTo(price.getSellingPrice()) < 0) {
             throw new SellerProductPriceException(
                     "Selling price cannot be greater than MRP"
             );
         }
 
-        if (price.getMrp().compareTo(
-                BigDecimal.ZERO
-        ) <= 0) {
-
+        if (price.getMrp().compareTo(BigDecimal.ZERO) <= 0) {
             throw new SellerProductPriceException(
                     "MRP must be greater than zero"
             );
         }
 
-        if (price.getSellingPrice().compareTo(
-                BigDecimal.ZERO
-        ) <= 0) {
-
+        if (price.getSellingPrice().compareTo(BigDecimal.ZERO) <= 0) {
             throw new SellerProductPriceException(
                     "Selling price must be greater than zero"
             );
         }
     }
 
-    // =========================================================
-    // DISCOUNT CALCULATION
-    // =========================================================
-
     private BigDecimal calculateDiscountPercentage(
             BigDecimal mrp,
             BigDecimal sellingPrice
     ) {
-
         if (mrp == null ||
                 sellingPrice == null ||
                 mrp.compareTo(BigDecimal.ZERO) <= 0) {
-
             return BigDecimal.ZERO;
         }
 
-        return mrp
-                .subtract(sellingPrice)
-                .divide(
-                        mrp,
-                        4,
-                        RoundingMode.HALF_UP
-                )
-                .multiply(
-                        BigDecimal.valueOf(100)
-                )
-                .setScale(
-                        2,
-                        RoundingMode.HALF_UP
-                );
+        return mrp.subtract(sellingPrice)
+                .divide(mrp, 4, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100))
+                .setScale(2, RoundingMode.HALF_UP);
     }
-
-    // =========================================================
-    // VALIDATE SPECIFICATIONS
-    // =========================================================
 
     private void validateSpecifications(
             List<SellerProductSpecificationRequest> specifications
     ) {
-
-        if (specifications == null ||
-                specifications.isEmpty()) {
-
+        if (specifications == null || specifications.isEmpty()) {
             return;
         }
 
-        Set<String> names =
-                new HashSet<>();
+        Set<String> names = new HashSet<>();
 
         for (SellerProductSpecificationRequest specification
                 : specifications) {
-
             if (specification == null) {
-
                 throw new SellerProductValidationException(
                         "Specification data is required"
                 );
             }
 
-            String name =
-                    normalizeRequired(
-                            specification.getSpecificationName(),
-                            "Specification name"
-                    );
+            String name = normalizeRequired(
+                    specification.getSpecificationName(),
+                    "Specification name"
+            );
 
-            String normalizedName =
-                    name.toLowerCase(Locale.ROOT);
-
-            if (!names.add(normalizedName)) {
-
+            if (!names.add(name.toLowerCase(Locale.ROOT))) {
                 throw new SellerProductValidationException(
-                        "Duplicate specification name: "
-                                + name
+                        "Duplicate specification name: " + name
                 );
             }
         }
     }
 
-    // =========================================================
-    // VALIDATE VARIANTS
-    // =========================================================
-
     private void validateVariants(
             List<SellerProductVariantRequest> variants
     ) {
-
-        if (variants == null ||
-                variants.isEmpty()) {
-
+        if (variants == null || variants.isEmpty()) {
             return;
         }
 
-        Set<String> skus =
-                new HashSet<>();
+        Set<String> skus = new HashSet<>();
 
-        for (SellerProductVariantRequest variant
-                : variants) {
-
+        for (SellerProductVariantRequest variant : variants) {
             if (variant == null) {
-
                 throw new SellerProductValidationException(
                         "Product variant data is required"
                 );
             }
 
-            String sku =
-                    normalizeRequired(
-                            variant.getSku(),
-                            "SKU"
-                    );
+            String sku = normalizeRequired(variant.getSku(), "SKU");
 
-            String normalizedSku =
-                    sku.toLowerCase(Locale.ROOT);
-
-            if (!skus.add(normalizedSku)) {
-
+            if (!skus.add(sku.toLowerCase(Locale.ROOT))) {
                 throw new SellerProductVariantAlreadyExistsException(
                         "Duplicate SKU in request: " + sku
                 );
@@ -950,82 +813,54 @@ public class SellerProductServiceImpl implements SellerProductService {
         }
     }
 
-    // =========================================================
-    // VALIDATE VARIANT ATTRIBUTES
-    // =========================================================
-
     private void validateVariantAttributes(
             List<SellerProductVariantAttributeRequest> attributes
     ) {
-
-        if (attributes == null ||
-                attributes.isEmpty()) {
-
+        if (attributes == null || attributes.isEmpty()) {
             throw new SellerProductValidationException(
                     "At least one variant attribute is required"
             );
         }
 
-        Set<String> names =
-                new HashSet<>();
+        Set<String> names = new HashSet<>();
 
-        for (SellerProductVariantAttributeRequest attribute
-                : attributes) {
-
+        for (SellerProductVariantAttributeRequest attribute : attributes) {
             if (attribute == null) {
-
                 throw new SellerProductValidationException(
                         "Variant attribute data is required"
                 );
             }
 
-            String name =
-                    normalizeRequired(
-                            attribute.getAttributeName(),
-                            "Attribute name"
-                    );
+            String name = normalizeRequired(
+                    attribute.getAttributeName(),
+                    "Attribute name"
+            );
 
             normalizeRequired(
                     attribute.getAttributeValue(),
                     "Attribute value"
             );
 
-            String normalizedName =
-                    name.toLowerCase(Locale.ROOT);
-
-            if (!names.add(normalizedName)) {
-
+            if (!names.add(name.toLowerCase(Locale.ROOT))) {
                 throw new SellerProductValidationException(
-                        "Duplicate variant attribute: "
-                                + name
+                        "Duplicate variant attribute: " + name
                 );
             }
         }
     }
 
-    // =========================================================
-    // VALIDATE INVENTORIES
-    // =========================================================
-
     private void validateInventories(
             Seller seller,
             List<SellerProductInventoryRequest> inventories
     ) {
-
-        if (inventories == null ||
-                inventories.isEmpty()) {
-
+        if (inventories == null || inventories.isEmpty()) {
             return;
         }
 
-        Set<Long> warehouseIds =
-                new HashSet<>();
+        Set<Long> warehouseIds = new HashSet<>();
 
-        for (SellerProductInventoryRequest inventory
-                : inventories) {
-
+        for (SellerProductInventoryRequest inventory : inventories) {
             if (inventory == null) {
-
                 throw new SellerProductInventoryException(
                         "Inventory data is required"
                 );
@@ -1033,64 +868,49 @@ public class SellerProductServiceImpl implements SellerProductService {
 
             if (inventory.getWarehouseId() == null ||
                     inventory.getWarehouseId() <= 0) {
-
                 throw new SellerProductWarehouseException(
                         "Warehouse ID must be greater than zero"
                 );
             }
 
-            if (!warehouseIds.add(
-                    inventory.getWarehouseId()
-            )) {
-
+            if (!warehouseIds.add(inventory.getWarehouseId())) {
                 throw new SellerProductWarehouseException(
                         "Duplicate warehouse in variant inventory: "
                                 + inventory.getWarehouseId()
                 );
             }
 
-            Warehouse warehouse =
-                    warehouseRepository
-                            .findByIdAndSeller(
-                                    inventory.getWarehouseId(),
-                                    seller
+            Warehouse warehouse = warehouseRepository
+                    .findByIdAndSeller(
+                            inventory.getWarehouseId(),
+                            seller
+                    )
+                    .orElseThrow(() ->
+                            new SellerProductWarehouseException(
+                                    "Warehouse not found or does not belong to seller: "
+                                            + inventory.getWarehouseId()
                             )
-                            .orElseThrow(() ->
-                                    new SellerProductWarehouseException(
-                                            "Warehouse not found or does not belong to seller: "
-                                                    + inventory.getWarehouseId()
-                                    )
-                            );
+                    );
 
-            if (warehouse.getStatus()
-                    != WarehouseStatus.ACTIVE) {
-
+            if (warehouse.getStatus() != WarehouseStatus.ACTIVE) {
                 throw new SellerProductWarehouseException(
-                        "Warehouse is not active: "
-                                + warehouse.getId()
+                        "Warehouse is not active: " + warehouse.getId()
                 );
             }
 
-            int quantity =
-                    inventory.getQuantity() == null
-                            ? 0
-                            : inventory.getQuantity();
+            int quantity = inventory.getQuantity() == null
+                    ? 0 : inventory.getQuantity();
 
-            int reserved =
-                    inventory.getReservedQuantity() == null
-                            ? 0
-                            : inventory.getReservedQuantity();
+            int reserved = inventory.getReservedQuantity() == null
+                    ? 0 : inventory.getReservedQuantity();
 
-            if (quantity < 0 ||
-                    reserved < 0) {
-
+            if (quantity < 0 || reserved < 0) {
                 throw new SellerProductInventoryException(
                         "Inventory quantity cannot be negative"
                 );
             }
 
             if (reserved > quantity) {
-
                 throw new SellerProductInventoryException(
                         "Reserved quantity cannot be greater than quantity"
                 );
@@ -1098,20 +918,11 @@ public class SellerProductServiceImpl implements SellerProductService {
         }
     }
 
-    // =========================================================
-    // MAP PRODUCT RESPONSE
-    // =========================================================
-
     @Transactional(readOnly = true)
-    protected SellerProductResponse mapToResponse(
-            ProductEntity product
-    ) {
-
+    protected SellerProductResponse mapToResponse(ProductEntity product) {
         ProductInformationEntity information =
                 productInformationRepository
-                        .findByProductEntity_Id(
-                                product.getId()
-                        )
+                        .findByProductEntity_Id(product.getId())
                         .orElse(null);
 
         List<ProductSpecification> specifications =
@@ -1122,9 +933,7 @@ public class SellerProductServiceImpl implements SellerProductService {
 
         List<ProductVariantEntity> variants =
                 productVariantRepository
-                        .findByProductEntity_Id(
-                                product.getId()
-                        );
+                        .findByProductEntity_Id(product.getId());
 
         List<ProductImageEntity> images =
                 productImageRepository
@@ -1134,28 +943,18 @@ public class SellerProductServiceImpl implements SellerProductService {
 
         return SellerProductResponse.builder()
                 .id(product.getId())
-                .categoryId(
-                        product.getCategory()
-                                .getId()
-                )
-                .subCategoryId(
-                        product.getSubCategory()
-                                .getId()
-                )
+                .categoryId(product.getCategory().getId())
+                .subCategoryId(product.getSubCategory().getId())
                 .brandId(
-                        product.getBrand()
-                                .getId()
+                        product.getBrand() != null
+                                ? product.getBrand().getId()
+                                : null
                 )
                 .name(product.getName())
                 .slug(product.getSlug())
                 .description(product.getDescription())
-                .status(
-                        product.getStatus()
-                                .name()
-                )
-                .information(
-                        mapInformation(information)
-                )
+                .status(product.getStatus().name())
+                .information(mapInformation(information))
                 .specifications(
                         specifications.stream()
                                 .map(this::mapSpecification)
@@ -1174,61 +973,34 @@ public class SellerProductServiceImpl implements SellerProductService {
                 .build();
     }
 
-    // =========================================================
-    // MAP INFORMATION
-    // =========================================================
-
     private SellerProductInformationResponse mapInformation(
             ProductInformationEntity information
     ) {
-
         if (information == null) {
             return null;
         }
 
         return SellerProductInformationResponse.builder()
-                .shortDescription(
-                        information.getShortDescription()
-                )
-                .longDescription(
-                        information.getLongDescription()
-                )
-                .warranty(
-                        information.getWarranty()
-                )
-                .manufacturer(
-                        information.getManufacturer()
-                )
+                .shortDescription(information.getShortDescription())
+                .longDescription(information.getLongDescription())
+                .warranty(information.getWarranty())
+                .manufacturer(information.getManufacturer())
                 .build();
     }
-
-    // =========================================================
-    // MAP SPECIFICATION
-    // =========================================================
 
     private SellerProductSpecificationResponse mapSpecification(
             ProductSpecification specification
     ) {
-
         return SellerProductSpecificationResponse.builder()
                 .id(specification.getId())
-                .specificationName(
-                        specification.getSpecificationName()
-                )
-                .specificationValue(
-                        specification.getSpecificationValue()
-                )
+                .specificationName(specification.getSpecificationName())
+                .specificationValue(specification.getSpecificationValue())
                 .build();
     }
-
-    // =========================================================
-    // MAP VARIANT
-    // =========================================================
 
     private SellerProductVariantResponse mapVariant(
             ProductVariantEntity variant
     ) {
-
         List<VariantAttributeEntity> attributes =
                 variantAttributeRepository
                         .findByVariantIdOrderByAttributeNameAsc(
@@ -1237,32 +1009,23 @@ public class SellerProductServiceImpl implements SellerProductService {
 
         ProductVariantPriceEntity price =
                 productVariantPriceRepository
-                        .findByProductVariantId(
-                                variant.getId()
-                        )
+                        .findByProductVariantId(variant.getId())
                         .orElse(null);
 
         List<InventoryItem> inventoryItems =
                 inventoryItemRepository
-                        .findByProductVariantId(
-                                variant.getId()
-                        );
+                        .findByProductVariantId(variant.getId());
 
         return SellerProductVariantResponse.builder()
                 .id(variant.getId())
                 .sku(variant.getSku())
-                .status(
-                        variant.getStatus()
-                                .name()
-                )
+                .status(variant.getStatus().name())
                 .attributes(
                         attributes.stream()
                                 .map(this::mapAttribute)
                                 .toList()
                 )
-                .price(
-                        mapPrice(price)
-                )
+                .price(mapPrice(price))
                 .inventories(
                         inventoryItems.stream()
                                 .map(this::mapInventory)
@@ -1271,33 +1034,19 @@ public class SellerProductServiceImpl implements SellerProductService {
                 .build();
     }
 
-    // =========================================================
-    // MAP ATTRIBUTE
-    // =========================================================
-
     private SellerProductVariantAttributeResponse mapAttribute(
             VariantAttributeEntity attribute
     ) {
-
         return SellerProductVariantAttributeResponse.builder()
                 .id(attribute.getId())
-                .attributeName(
-                        attribute.getAttributeName()
-                )
-                .attributeValue(
-                        attribute.getAttributeValue()
-                )
+                .attributeName(attribute.getAttributeName())
+                .attributeValue(attribute.getAttributeValue())
                 .build();
     }
-
-    // =========================================================
-    // MAP PRICE
-    // =========================================================
 
     private SellerProductVariantPriceResponse mapPrice(
             ProductVariantPriceEntity price
     ) {
-
         if (price == null) {
             return null;
         }
@@ -1305,63 +1054,32 @@ public class SellerProductServiceImpl implements SellerProductService {
         return SellerProductVariantPriceResponse.builder()
                 .id(price.getId())
                 .mrp(price.getMrp())
-                .sellingPrice(
-                        price.getSellingPrice()
-                )
-                .discountPercentage(
-                        price.getDiscountPercentage()
-                )
+                .sellingPrice(price.getSellingPrice())
+                .discountPercentage(price.getDiscountPercentage())
                 .currency(price.getCurrency())
                 .build();
     }
 
-    // =========================================================
-    // MAP INVENTORY
-    // =========================================================
-
     private SellerProductInventoryResponse mapInventory(
             InventoryItem item
     ) {
-
-        int available =
-                safeStock(
-                        item.getAvailableStock()
-                );
-
-        int reserved =
-                safeStock(
-                        item.getReservedStock()
-                );
-
-        int quantity =
-                available + reserved;
+        int available = safeStock(item.getAvailableStock());
+        int reserved = safeStock(item.getReservedStock());
+        int quantity = available + reserved;
 
         return SellerProductInventoryResponse.builder()
                 .id(item.getId())
                 .warehouseId(
-                        item.getInventory()
-                                .getWarehouse()
-                                .getId()
+                        item.getInventory().getWarehouse().getId()
                 )
                 .quantity(quantity)
                 .reservedQuantity(reserved)
                 .availableQuantity(available)
-                .stockStatus(
-                        available > 0
-                                ? "IN_STOCK"
-                                : "OUT_OF_STOCK"
-                )
+                .stockStatus(available > 0 ? "IN_STOCK" : "OUT_OF_STOCK")
                 .build();
     }
 
-    // =========================================================
-    // MAP IMAGE
-    // =========================================================
-
-    private SellerProductImageResponse mapImage(
-            ProductImageEntity image
-    ) {
-
+    private SellerProductImageResponse mapImage(ProductImageEntity image) {
         return SellerProductImageResponse.builder()
                 .id(image.getId())
                 .imageUrl(image.getImageUrl())
@@ -1370,14 +1088,7 @@ public class SellerProductServiceImpl implements SellerProductService {
                 .build();
     }
 
-    // =========================================================
-    // GET SELLER
-    // =========================================================
-
-    private Seller getSellerByUserId(
-            Long userId
-    ) {
-
+    private Seller getSellerByUserId(Long userId) {
         return sellerRepository
                 .findByUserId(userId)
                 .orElseThrow(() ->
@@ -1387,35 +1098,16 @@ public class SellerProductServiceImpl implements SellerProductService {
                 );
     }
 
-    // =========================================================
-    // VALIDATE USER ID
-    // =========================================================
-
-    private void validateUserId(
-            Long userId
-    ) {
-
-        if (userId == null ||
-                userId <= 0) {
-
+    private void validateUserId(Long userId) {
+        if (userId == null || userId <= 0) {
             throw new SellerProductValidationException(
                     "User ID must be greater than zero"
             );
         }
     }
 
-    // =========================================================
-    // NORMALIZE REQUIRED STRING
-    // =========================================================
-
-    private String normalizeRequired(
-            String value,
-            String fieldName
-    ) {
-
-        if (value == null ||
-                value.trim().isEmpty()) {
-
+    private String normalizeRequired(String value, String fieldName) {
+        if (value == null || value.trim().isEmpty()) {
             throw new SellerProductValidationException(
                     fieldName + " is required"
             );
@@ -1424,38 +1116,18 @@ public class SellerProductServiceImpl implements SellerProductService {
         return value.trim();
     }
 
-    // =========================================================
-    // SAFE STOCK
-    // =========================================================
-
-    private int safeStock(
-            Integer stock
-    ) {
-
-        return stock == null
-                ? 0
-                : stock;
+    private int safeStock(Integer stock) {
+        return stock == null ? 0 : stock;
     }
 
-    // =========================================================
-    // FILE EXTENSION
-    // =========================================================
+    private String getExtension(MultipartFile file) {
+        String filename = file.getOriginalFilename();
 
-    private String getExtension(
-            MultipartFile file
-    ) {
-
-        String filename =
-                file.getOriginalFilename();
-
-        if (filename == null ||
-                !filename.contains(".")) {
-
+        if (filename == null || !filename.contains(".")) {
             return ".bin";
         }
 
-        return filename.substring(
-                filename.lastIndexOf(".")
-        ).toLowerCase(Locale.ROOT);
+        return filename.substring(filename.lastIndexOf("."))
+                .toLowerCase(Locale.ROOT);
     }
 }

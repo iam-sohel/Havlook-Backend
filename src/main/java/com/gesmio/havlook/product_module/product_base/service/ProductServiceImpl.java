@@ -488,15 +488,15 @@ public class ProductServiceImpl implements ProductService {
                         product.getSubCategory().getId()
                 )
                 .brandId(
-                        product.getBrand().getId()
+                        product.getBrand() != null
+                                ? product.getBrand().getId()
+                                : null
                 )
-                .information(null)
                 .specifications(specifications)
                 .images(images)
                 .variants(variantResponses)
                 .build();
     }
-
 
     // =========================================================
     // STOCK STATUS
@@ -706,6 +706,10 @@ public class ProductServiceImpl implements ProductService {
             Long brandId,
             Pageable pageable
     ) {
+
+        if (brandId == null) {
+            throw new ProductValidationException("Brand id is required");
+        }
 
         getActiveBrand(brandId);
 
@@ -1080,11 +1084,9 @@ public class ProductServiceImpl implements ProductService {
             Long brandId
     ) {
 
+        // Brand is optional for a product. Return null when no brand is selected.
         if (brandId == null) {
-
-            throw new ProductValidationException(
-                    "Brand id is required"
-            );
+            return null;
         }
 
         return brandRepository
@@ -1154,13 +1156,6 @@ public class ProductServiceImpl implements ProductService {
             );
         }
 
-        if (product.getBrand() == null) {
-
-            throw new ProductValidationException(
-                    "Product brand is missing"
-            );
-        }
-
         getActiveCategory(
                 product.getCategory().getId()
         );
@@ -1169,9 +1164,10 @@ public class ProductServiceImpl implements ProductService {
                 product.getSubCategory().getId()
         );
 
-        getActiveBrand(
-                product.getBrand().getId()
-        );
+        // Validate the brand only when this product has one assigned.
+        if (product.getBrand() != null) {
+            getActiveBrand(product.getBrand().getId());
+        }
 
         validateSubCategoryBelongsToCategory(
                 product.getSubCategory(),

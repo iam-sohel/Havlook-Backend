@@ -2,8 +2,10 @@ package com.gesmio.havlook.seller_module.product.controller;
 
 import com.gesmio.havlook.common.dto.CommonResponseDto;
 import com.gesmio.havlook.seller_module.auth.SellerAuthorizationService;
+import com.gesmio.havlook.seller_module.product.dto.BulkProductCreateResponse;
 import com.gesmio.havlook.seller_module.product.dto.SellerProductCreateRequest;
 import com.gesmio.havlook.seller_module.product.dto.SellerProductResponse;
+import com.gesmio.havlook.seller_module.product.service.BulkProductService;
 import com.gesmio.havlook.seller_module.product.service.SellerProductService;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +16,8 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/sellers/products")
@@ -102,5 +106,33 @@ public class SellerProductController {
                     "Authenticated user ID is invalid"
             );
         }
+    }
+
+    private final BulkProductService bulkProductService;
+
+    @PostMapping(
+            value = "/bulk",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<CommonResponseDto<BulkProductCreateResponse>>
+    createBulkProducts(
+            @RequestBody List<SellerProductCreateRequest> requests,
+            Authentication authentication) {
+
+        Long userId = getUserId(authentication);
+
+        sellerAuthorizationService.getAuthorizedSeller(userId);
+
+        BulkProductCreateResponse response =
+                bulkProductService.createProducts(userId, requests);
+
+        return ResponseEntity.ok(
+                new CommonResponseDto<>(
+                        true,
+                        "Bulk product processing completed",
+                        response
+                )
+        );
     }
 }
