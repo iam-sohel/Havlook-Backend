@@ -97,10 +97,10 @@ public class ProductEntity {
      * Existing Brand.
      * Seller selects it; Seller does not create it.
      */
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
     @JoinColumn(
             name = "brand_id",
-            nullable = false,
+            nullable = true,
             foreignKey = @ForeignKey(
                     name = "fk_products_brand"
             )

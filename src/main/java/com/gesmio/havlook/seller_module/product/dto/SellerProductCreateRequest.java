@@ -21,24 +21,21 @@ public class SellerProductCreateRequest {
     @NotNull(message = "SubCategory ID is required")
     private Long subCategoryId;
 
-    @NotNull(message = "Brand ID is required")
+
     private Long brandId;
 
     @NotBlank(message = "Product name is required")
-    @Size(
-            max = 200,
-            message = "Product name must not exceed 200 characters"
-    )
+    @Size(max = 200, message = "Product name must not exceed 200 characters")
     private String name;
 
     @NotBlank(message = "Product slug is required")
-    @Size(
-            max = 250,
-            message = "Product slug must not exceed 250 characters"
-    )
+    @Size(max = 250, message = "Product slug must not exceed 250 characters")
     private String slug;
 
     private String description;
+
+    // Image URLs from Excel
+    private List<String> images;
 
     @Valid
     private SellerProductInformationRequest information;
