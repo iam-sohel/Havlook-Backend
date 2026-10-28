@@ -151,6 +151,7 @@ public class SecurityConfig {
                         // =================================================
                         .requestMatchers(
                                 HttpMethod.GET,
+                                "/api/v1/products",
                                 "/api/v1/products/**",
                                 "/api/v1/categories/**",
                                 "/api/v1/subcategories/**",
@@ -196,7 +197,8 @@ public class SecurityConfig {
 
         configuration.setAllowedOrigins(List.of(
                 "http://localhost:3000",
-                "http://localhost:5173"
+                "http://localhost:5173",
+                "http://10.0.2.2:3000"
         ));
 
         configuration.setAllowedMethods(List.of(

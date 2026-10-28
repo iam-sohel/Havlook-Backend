@@ -34,3 +34,13 @@ build/
 local-runtime.properties
 run-*.log
 run-*.err.log
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+# Local recovery and backup artifacts
+*.bak
+*.bak-*
+*.empty-recovery-copy
+*.backup
+*.audit-backup-*
