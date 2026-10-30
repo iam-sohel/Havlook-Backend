@@ -1,5 +1,13 @@
 package com.gesmio.havlook.product_module.product_base.service;
+import com.gesmio.havlook.auth_module.security.CustomUserDetails;
+import com.gesmio.havlook.seller_module.seller.entity.Seller;
+import com.gesmio.havlook.seller_module.seller.repository.SellerRepository;
 
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import java.util.Objects;
 import com.gesmio.havlook.brand_module.entity.Brand;
 import com.gesmio.havlook.brand_module.entity.BrandStatus;
 import com.gesmio.havlook.brand_module.repository.BrandRepository;
@@ -91,6 +99,75 @@ public class ProductServiceImpl implements ProductService {
 
     private final ProductImageRepository productImageRepository;
 
+    // Used to resolve the seller associated with the authenticated JWT user.
+    private final SellerRepository sellerRepository;
+
+
+
+    // =========================================================
+    // AUTHENTICATION AND SELLER OWNERSHIP
+    // =========================================================
+
+    private CustomUserDetails getAuthenticatedUserDetails() {
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null ||
+                !authentication.isAuthenticated() ||
+                !(authentication.getPrincipal() instanceof CustomUserDetails userDetails)) {
+            throw new AccessDeniedException("Authenticated user not found");
+        }
+
+        return userDetails;
+    }
+
+    private boolean isAdmin() {
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return false;
+        }
+
+        return authentication.getAuthorities().stream()
+                .anyMatch(authority ->
+                        "ROLE_ADMIN".equals(authority.getAuthority()));
+    }
+
+    private Seller getAuthenticatedSeller() {
+        Long userId = getAuthenticatedUserDetails().getUserId();
+
+        if (userId == null) {
+            throw new AccessDeniedException("Authenticated user ID not found");
+        }
+
+        return sellerRepository.findByUserId(userId)
+                .orElseThrow(() ->
+                        new AccessDeniedException(
+                                "Seller profile not found for authenticated user"));
+    }
+
+    private void validateProductOwnership(ProductEntity product) {
+        if (product == null) {
+            throw new ProductNotFoundException("Product not found");
+        }
+
+        // Admin can manage products belonging to any seller.
+        if (isAdmin()) {
+            return;
+        }
+
+        Seller authenticatedSeller = getAuthenticatedSeller();
+
+        if (product.getSeller() == null ||
+                product.getSeller().getId() == null ||
+                !Objects.equals(
+                        product.getSeller().getId(),
+                        authenticatedSeller.getId())) {
+            throw new AccessDeniedException(
+                    "You are not authorized to modify this product");
+        }
+    }
 
     // =========================================================
     // CREATE PRODUCT
@@ -100,6 +177,9 @@ public class ProductServiceImpl implements ProductService {
     public ProductResponse createProduct(
             ProductCreateRequest request
     ) {
+        // Seller identity comes only from the authenticated JWT principal.
+        // Admin seller assignment is intentionally not inferred from request data.
+        Seller authenticatedSeller = getAuthenticatedSeller();
 
         validateSlugForCreate(request.getSlug());
 
@@ -107,9 +187,7 @@ public class ProductServiceImpl implements ProductService {
                 getActiveCategory(request.getCategoryId());
 
         SubCategory subCategory =
-                getActiveSubCategory(
-                        request.getSubCategoryId()
-                );
+                getActiveSubCategory(request.getSubCategoryId());
 
         validateSubCategoryBelongsToCategory(
                 subCategory,
@@ -125,6 +203,7 @@ public class ProductServiceImpl implements ProductService {
         product.setCategory(category);
         product.setSubCategory(subCategory);
         product.setBrand(brand);
+        product.setSeller(authenticatedSeller);
 
         ProductEntity savedProduct =
                 productRepository.save(product);
@@ -987,32 +1066,25 @@ public class ProductServiceImpl implements ProductService {
             Long id,
             ProductUpdateRequest request
     ) {
-
         ProductEntity product =
-                productRepository
-                        .findById(id)
-                        .orElseThrow(
-                                () ->
-                                        new ProductNotFoundException(
-                                                "Product not found with id: "
-                                                        + id
-                                        )
-                        );
+                productRepository.findById(id)
+                        .orElseThrow(() ->
+                                new ProductNotFoundException(
+                                        "Product not found with id: " + id));
 
-        validateSlugForUpdate(
-                request.getSlug(),
-                id
-        );
+        // Check ownership before applying any changes.
+        validateProductOwnership(product);
+
+        // Preserve the original owner; update DTO cannot transfer ownership.
+        Seller existingSeller = product.getSeller();
+
+        validateSlugForUpdate(request.getSlug(), id);
 
         Category category =
-                getActiveCategory(
-                        request.getCategoryId()
-                );
+                getActiveCategory(request.getCategoryId());
 
         SubCategory subCategory =
-                getActiveSubCategory(
-                        request.getSubCategoryId()
-                );
+                getActiveSubCategory(request.getSubCategoryId());
 
         validateSubCategoryBelongsToCategory(
                 subCategory,
@@ -1020,18 +1092,14 @@ public class ProductServiceImpl implements ProductService {
         );
 
         Brand brand =
-                getActiveBrand(
-                        request.getBrandId()
-                );
+                getActiveBrand(request.getBrandId());
 
-        productMapper.updateEntity(
-                request,
-                product
-        );
+        productMapper.updateEntity(request, product);
 
         product.setCategory(category);
         product.setSubCategory(subCategory);
         product.setBrand(brand);
+        product.setSeller(existingSeller);
 
         ProductEntity updated =
                 productRepository.save(product);
@@ -1057,6 +1125,8 @@ public class ProductServiceImpl implements ProductService {
                                                         + id
                                         )
                         );
+
+        validateProductOwnership(product);
 
         if (product.getStatus() ==
                 ProductStatus.INACTIVE) {
@@ -1089,6 +1159,8 @@ public class ProductServiceImpl implements ProductService {
                                                         + id
                                         )
                         );
+
+        validateProductOwnership(product);
 
         if (product.getStatus() ==
                 ProductStatus.ACTIVE) {
@@ -1397,3 +1469,4 @@ public class ProductServiceImpl implements ProductService {
         );
     }
 }
+
