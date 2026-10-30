@@ -1,3 +1,4 @@
+
 package com.gesmio.havlook.product_module.product_base.mapper;
 
 import com.gesmio.havlook.product_module.product_base.dto.ProductCreateRequest;
@@ -9,8 +10,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class ProductMapper {
 
-    public ProductEntity toEntity(
-            ProductCreateRequest request) {
+    public ProductEntity toEntity(ProductCreateRequest request) {
 
         ProductEntity productEntity = new ProductEntity();
 
@@ -21,14 +21,29 @@ public class ProductMapper {
         return productEntity;
     }
 
-    public ProductResponse toResponse(
-            ProductEntity productEntity) {
+    public ProductResponse toResponse(ProductEntity productEntity) {
 
         return ProductResponse.builder()
                 .id(productEntity.getId())
-                .categoryId(productEntity.getCategory().getId())
-                .subCategoryId(productEntity.getSubCategory().getId())
-                .brandId(productEntity.getBrand().getId())
+
+                .categoryId(
+                        productEntity.getCategory() != null
+                                ? productEntity.getCategory().getId()
+                                : null
+                )
+
+                .subCategoryId(
+                        productEntity.getSubCategory() != null
+                                ? productEntity.getSubCategory().getId()
+                                : null
+                )
+
+                .brandId(
+                        productEntity.getBrand() != null
+                                ? productEntity.getBrand().getId()
+                                : null
+                )
+
                 .name(productEntity.getName())
                 .slug(productEntity.getSlug())
                 .description(productEntity.getDescription())

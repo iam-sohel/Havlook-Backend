@@ -14,6 +14,12 @@ public interface ProductSpecificationRepository
             Long productId
     );
 
+    // Batch fetch specifications for all products on a page
+    List<ProductSpecification>
+    findByProductEntity_IdInOrderBySpecificationNameAsc(
+            List<Long> productIds
+    );
+
     Optional<ProductSpecification>
     findByProductEntity_IdAndSpecificationNameIgnoreCase(
             Long productId,
