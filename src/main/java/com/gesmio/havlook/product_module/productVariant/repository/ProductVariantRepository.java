@@ -54,4 +54,11 @@ public interface ProductVariantRepository
             Long id,
             ProductVariantStatus status
     );
+
+    // Batch fetch ACTIVE variants for all products on a page
+    List<ProductVariantEntity>
+    findByProductEntity_IdInAndStatus(
+            List<Long> productIds,
+            ProductVariantStatus status
+    );
 }

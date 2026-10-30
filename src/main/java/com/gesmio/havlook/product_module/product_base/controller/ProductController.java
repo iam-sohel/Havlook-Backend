@@ -193,13 +193,15 @@ public class ProductController {
             CommonResponseDto<Page<ProductResponse>>
             > getProductsByCategory(
             @PathVariable Long categoryId,
-            @PageableDefault(
-                    size = 20,
-                    sort = "name",
-                    direction = Sort.Direction.ASC
-            )
-            Pageable pageable
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
+
+        Pageable pageable = PageRequest.of(
+                page,
+                size,
+                Sort.by(Sort.Direction.ASC, "name")
+        );
 
         Page<ProductResponse> response =
                 productService.getProductsByCategory(
@@ -215,7 +217,6 @@ public class ProductController {
                 )
         );
     }
-
 
     // =========================================================
     // GET PRODUCTS BY SUBCATEGORY

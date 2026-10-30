@@ -640,16 +640,238 @@ public class ProductServiceImpl implements ProductService {
     public Page<ProductDetailsResponse> getAllProducts(
             Pageable pageable
     ) {
-
-        return productRepository
-                .findAllByStatus(
+        Page<ProductEntity> productPage =
+                productRepository.findAllByStatus(
                         ProductStatus.ACTIVE,
                         pageable
-                )
-                .map(this::buildProductDetails);
+                );
+
+        if (productPage.isEmpty()) {
+            return productPage.map(this::buildProductDetails);
+        }
+
+        Map<Long, ProductDetailsResponse> detailsByProductId =
+                buildProductDetailsBatch(productPage.getContent());
+
+        return productPage.map(
+                product -> detailsByProductId.get(product.getId())
+        );
+    }private Map<Long, ProductDetailsResponse> buildProductDetailsBatch(
+            List<ProductEntity> products
+    ) {
+        List<Long> productIds = products.stream()
+                .map(ProductEntity::getId)
+                .toList();
+
+        // 1. Batch-load specifications
+        Map<Long, List<ProductSpecification>> specificationsByProductId =
+                productSpecificationRepository
+                        .findByProductEntity_IdInOrderBySpecificationNameAsc(
+                                productIds
+                        )
+                        .stream()
+                        .collect(Collectors.groupingBy(
+                                specification ->
+                                        specification.getProductEntity().getId()
+                        ));
+
+        // 2. Batch-load images
+        Map<Long, List<ProductImageEntity>> imagesByProductId =
+                productImageRepository
+                        .findByProductEntity_IdInOrderByDisplayOrderAsc(
+                                productIds
+                        )
+                        .stream()
+                        .collect(Collectors.groupingBy(
+                                image -> image.getProductEntity().getId()
+                        ));
+
+        // 3. Batch-load active variants
+        List<ProductVariantEntity> variants =
+                productVariantRepository.findByProductEntity_IdInAndStatus(
+                        productIds,
+                        ProductVariantStatus.ACTIVE
+                );
+
+        List<Long> variantIds = variants.stream()
+                .map(ProductVariantEntity::getId)
+                .toList();
+
+        // 4. Batch-load attributes
+        Map<Long, List<VariantAttributeEntity>> attributesByVariantId;
+
+        if (variantIds.isEmpty()) {
+            attributesByVariantId = Collections.emptyMap();
+        } else {
+            attributesByVariantId =
+                    variantAttributeRepository
+                            .findByVariantIdInOrderByAttributeNameAsc(
+                                    variantIds
+                            )
+                            .stream()
+                            .collect(Collectors.groupingBy(
+                                    attribute ->
+                                            attribute.getVariant().getId()
+                            ));
+        }
+
+        // 5. Batch-load prices
+        Map<Long, ProductVariantPriceEntity> pricesByVariantId;
+
+        if (variantIds.isEmpty()) {
+            pricesByVariantId = Collections.emptyMap();
+        } else {
+            pricesByVariantId =
+                    productVariantPriceRepository
+                            .findByProductVariantIdIn(variantIds)
+                            .stream()
+                            .collect(Collectors.toMap(
+                                    price -> price.getProductVariant().getId(),
+                                    price -> price,
+                                    (first, second) -> first
+                            ));
+        }
+
+        // 6. Batch-load inventory
+        Map<Long, List<InventoryItem>> inventoryByVariantId;
+
+        if (variantIds.isEmpty()) {
+            inventoryByVariantId = Collections.emptyMap();
+        } else {
+            inventoryByVariantId =
+                    inventoryItemRepository
+                            .findByProductVariantIdIn(variantIds)
+                            .stream()
+                            .collect(Collectors.groupingBy(
+                                    item ->
+                                            item.getProductVariant().getId()
+                            ));
+        }
+
+        // 7. Group variants by product ID
+        Map<Long, List<ProductVariantEntity>> variantsByProductId =
+                variants.stream()
+                        .collect(Collectors.groupingBy(
+                                variant ->
+                                        variant.getProductEntity().getId()
+                        ));
+
+        // 8. Assemble existing response DTOs
+        return products.stream()
+                .collect(Collectors.toMap(
+                        ProductEntity::getId,
+                        product -> {
+                            Long productId = product.getId();
+
+                            List<ProductSpecificationResponse> specifications =
+                                    specificationsByProductId
+                                            .getOrDefault(
+                                                    productId,
+                                                    Collections.emptyList()
+                                            )
+                                            .stream()
+                                            .map(this::toSpecificationResponse)
+                                            .toList();
+
+                            List<ProductImageResponse> images =
+                                    imagesByProductId
+                                            .getOrDefault(
+                                                    productId,
+                                                    Collections.emptyList()
+                                            )
+                                            .stream()
+                                            .map(this::toImageResponse)
+                                            .toList();
+
+                            List<ProductVariantResponse> variantResponses =
+                                    variantsByProductId
+                                            .getOrDefault(
+                                                    productId,
+                                                    Collections.emptyList()
+                                            )
+                                            .stream()
+                                            .map(variant -> {
+                                                Long variantId = variant.getId();
+
+                                                List<VariantAttributeResponse>
+                                                        attributes =
+                                                        attributesByVariantId
+                                                                .getOrDefault(
+                                                                        variantId,
+                                                                        Collections.emptyList()
+                                                                )
+                                                                .stream()
+                                                                .map(this::toAttributeResponse)
+                                                                .toList();
+
+                                                ProductVariantPriceResponse price =
+                                                        Optional.ofNullable(
+                                                                        pricesByVariantId.get(
+                                                                                variantId
+                                                                        )
+                                                                )
+                                                                .map(this::toPriceResponse)
+                                                                .orElse(null);
+
+                                                List<InventoryItem> inventoryItems =
+                                                        inventoryByVariantId
+                                                                .getOrDefault(
+                                                                        variantId,
+                                                                        Collections.emptyList()
+                                                                );
+
+                                                int totalAvailableStock =
+                                                        inventoryItems.stream()
+                                                                .mapToInt(item ->
+                                                                        item.getAvailableStock() == null
+                                                                                ? 0
+                                                                                : item.getAvailableStock()
+                                                                )
+                                                                .sum();
+
+                                                return ProductVariantResponse
+                                                        .builder()
+                                                        .id(variantId)
+                                                        .productId(productId)
+                                                        .sku(variant.getSku())
+                                                        .status(variant.getStatus())
+                                                        .attributes(attributes)
+                                                        .price(price)
+                                                        .stockStatus(
+                                                                calculateStockStatus(
+                                                                        totalAvailableStock
+                                                                )
+                                                        )
+                                                        .available(
+                                                                totalAvailableStock > 0
+                                                        )
+                                                        .build();
+                                            })
+                                            .toList();
+
+                            return ProductDetailsResponse.builder()
+                                    .id(product.getId())
+                                    .name(product.getName())
+                                    .slug(product.getSlug())
+                                    .description(product.getDescription())
+                                    .categoryId(
+                                            product.getCategory().getId()
+                                    )
+                                    .subCategoryId(
+                                            product.getSubCategory().getId()
+                                    )
+                                    .brandId(
+                                            product.getBrand() != null
+                                                    ? product.getBrand().getId()
+                                                    : null
+                                    )
+                                    .specifications(specifications)
+                                    .images(images)
+                                    .variants(variantResponses)
+                                    .build();
+                        }
+                ));
     }
-
-
     // =========================================================
     // GET PRODUCTS BY CATEGORY
     // =========================================================

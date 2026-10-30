@@ -8,8 +8,15 @@ import java.util.List;
 public interface ProductImageRepository
         extends JpaRepository<ProductImageEntity, Long> {
 
-    List<ProductImageEntity> findByProductEntity_IdOrderByDisplayOrderAsc(
+    List<ProductImageEntity>
+    findByProductEntity_IdOrderByDisplayOrderAsc(
             Long productId
+    );
+
+    // Batch fetch images for all products on a page
+    List<ProductImageEntity>
+    findByProductEntity_IdInOrderByDisplayOrderAsc(
+            List<Long> productIds
     );
 
     boolean existsByProductEntity_IdAndIsPrimaryTrue(
