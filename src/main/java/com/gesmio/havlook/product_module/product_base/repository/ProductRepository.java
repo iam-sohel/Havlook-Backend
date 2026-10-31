@@ -1,5 +1,7 @@
+
 package com.gesmio.havlook.product_module.product_base.repository;
 
+import com.gesmio.havlook.product_module.product_base.dto.ProductResponse;
 import com.gesmio.havlook.product_module.product_base.entity.ProductStatus;
 import com.gesmio.havlook.product_module.product_base.entity.ProductEntity;
 import org.springframework.data.domain.Page;
@@ -38,6 +40,39 @@ public interface ProductRepository extends JpaRepository<ProductEntity, Long> {
     Page<ProductEntity> findAllByCategoryIdAndStatus(
             Long categoryId,
             ProductStatus status,
+            Pageable pageable
+    );
+
+    // Category products - DTO Projection
+    @Query(
+            value = """
+            SELECT new com.gesmio.havlook.product_module.product_base.dto.ProductResponse(
+                p.id,
+                p.category.id,
+                p.subCategory.id,
+                p.brand.id,
+                p.name,
+                p.slug,
+                p.description,
+                p.status,
+                p.createdAt,
+                p.updatedAt
+            )
+            FROM ProductEntity p
+            WHERE p.category.id = :categoryId
+              AND p.status = :status
+            ORDER BY p.name ASC
+            """,
+            countQuery = """
+            SELECT COUNT(p)
+            FROM ProductEntity p
+            WHERE p.category.id = :categoryId
+              AND p.status = :status
+            """
+    )
+    Page<ProductResponse> findCategoryProductResponses(
+            @Param("categoryId") Long categoryId,
+            @Param("status") ProductStatus status,
             Pageable pageable
     );
 
@@ -86,15 +121,15 @@ public interface ProductRepository extends JpaRepository<ProductEntity, Long> {
     );
 
     @Query("""
-    SELECT p
-    FROM ProductEntity p
-    WHERE p.status = :status
-      AND (
-          LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%'))
-          OR LOWER(p.slug) LIKE LOWER(CONCAT('%', :keyword, '%'))
-          OR LOWER(p.description) LIKE LOWER(CONCAT('%', :keyword, '%'))
-      )
-""")
+        SELECT p
+        FROM ProductEntity p
+        WHERE p.status = :status
+          AND (
+              LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%'))
+              OR LOWER(p.slug) LIKE LOWER(CONCAT('%', :keyword, '%'))
+              OR LOWER(p.description) LIKE LOWER(CONCAT('%', :keyword, '%'))
+          )
+        """)
     List<ProductEntity> searchByKeyword(
             @Param("keyword") String keyword,
             @Param("status") ProductStatus status

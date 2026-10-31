@@ -3,6 +3,8 @@ import com.gesmio.havlook.auth_module.security.CustomUserDetails;
 import com.gesmio.havlook.seller_module.seller.entity.Seller;
 import com.gesmio.havlook.seller_module.seller.repository.SellerRepository;
 
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -72,11 +74,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class ProductServiceImpl implements ProductService {
-
     private final ProductRepository productRepository;
 
     private final ProductMapper productMapper;
@@ -103,7 +105,7 @@ public class ProductServiceImpl implements ProductService {
     private final SellerRepository sellerRepository;
 
 
-
+    private final JdbcTemplate jdbcTemplate;
     // =========================================================
     // AUTHENTICATION AND SELLER OWNERSHIP
     // =========================================================
@@ -955,23 +957,47 @@ public class ProductServiceImpl implements ProductService {
     // GET PRODUCTS BY CATEGORY
     // =========================================================
 
+
+
     @Override
     @Transactional(readOnly = true)
     public Page<ProductResponse> getProductsByCategory(
             Long categoryId,
             Pageable pageable
     ) {
+        long start = System.nanoTime();
 
         getActiveCategory(categoryId);
 
-        return productRepository
-                .findAllByCategoryIdAndStatus(
+        long categoryCheckEnd = System.nanoTime();
+
+        Page<ProductResponse> result =
+                productRepository.findCategoryProductResponses(
                         categoryId,
                         ProductStatus.ACTIVE,
                         pageable
-                )
-                .map(productMapper::toResponse);
+                );
+
+        long queryEnd = System.nanoTime();
+
+        System.out.println(
+                "CATEGORY_VALIDATION_MS: " +
+                        (categoryCheckEnd - start) / 1_000_000.0
+        );
+
+        System.out.println(
+                "PRODUCT_QUERY_AND_MAPPING_MS: " +
+                        (queryEnd - categoryCheckEnd) / 1_000_000.0
+        );
+
+        System.out.println(
+                "TOTAL_SERVICE_MS: " +
+                        (queryEnd - start) / 1_000_000.0
+        );
+
+        return result;
     }
+
 
 
     // =========================================================
@@ -1314,32 +1340,45 @@ public class ProductServiceImpl implements ProductService {
     // GET ACTIVE CATEGORY
     // =========================================================
 
-    private Category getActiveCategory(
-            Long categoryId
-    ) {
+    private Category getActiveCategory(Long categoryId) {
 
         if (categoryId == null) {
-
             throw new ProductValidationException(
                     "Category id is required"
             );
         }
 
-        return categoryRepository
-                .findByIdAndStatus(
-                        categoryId,
-                        CategoryStatus.ACTIVE
+        long start = System.nanoTime();
+
+        var result = categoryRepository.findByIdAndStatus(
+                categoryId,
+                CategoryStatus.ACTIVE
+        );
+
+        long repositoryEnd = System.nanoTime();
+
+        System.out.println(
+                "CATEGORY_REPOSITORY_MS: "
+                        + (repositoryEnd - start) / 1_000_000.0
+        );
+
+        long mappingStart = System.nanoTime();
+
+        Category category = result.orElseThrow(
+                () -> new ProductValidationException(
+                        "Active category not found with id: " + categoryId
                 )
-                .orElseThrow(
-                        () ->
-                                new ProductValidationException(
-                                        "Active category not found with id: "
-                                                + categoryId
-                                )
-                );
+        );
+
+        long mappingEnd = System.nanoTime();
+
+        System.out.println(
+                "CATEGORY_RESULT_PROCESSING_MS: "
+                        + (mappingEnd - mappingStart) / 1_000_000.0
+        );
+
+        return category;
     }
-
-
     // =========================================================
     // GET ACTIVE SUBCATEGORY
     // =========================================================
@@ -1468,5 +1507,6 @@ public class ProductServiceImpl implements ProductService {
                 product.getCategory()
         );
     }
+
 }
 
