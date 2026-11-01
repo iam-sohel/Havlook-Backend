@@ -1,0 +1,124 @@
+name: Backend CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: havlook/backend
+  AWS_ROLE_ARN: arn:aws:iam::289981265262:role/GitHubActions-NextCart-ECR
+
+jobs:
+  security-scan:
+    name: Security & Secrets Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Scan repository for secrets
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+
+  backend-build:
+    name: Backend Build, Test & ECR Publish
+    needs:
+      - security-scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Make Maven Wrapper executable
+        run: chmod +x mvnw
+
+      - name: Build and verify backend
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
+          RAZORPAY_KEY_SECRET: ${{ secrets.RAZORPAY_KEY_SECRET }}
+          RAZORPAY_WEBHOOK_SECRET: ${{ secrets.RAZORPAY_WEBHOOK_SECRET }}
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          MSG91_AUTH_KEY: ${{ secrets.MSG91_AUTH_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_STORAGE_AUTH_KEY: ${{ secrets.SUPABASE_STORAGE_AUTH_KEY }}
+          SANDBOX_API_KEY: ${{ secrets.SANDBOX_API_KEY }}
+          SANDBOX_API_SECRET: ${{ secrets.SANDBOX_API_SECRET }}
+          NUMVERIFY_ACCESS_KEY: ${{ secrets.NUMVERIFY_ACCESS_KEY }}
+          HUNTER_API_KEY: ${{ secrets.HUNTER_API_KEY }}
+        run: |
+          ./mvnw \
+            --batch-mode \
+            --no-transfer-progress \
+            clean verify
+
+      - name: Configure AWS credentials via GitHub OIDC
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: aws-actions/configure-aws-credentials@v6.2.4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-session-name: Havlook-GitHubActions-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: '289981265262'
+
+      - name: Verify AWS identity
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        run: aws sts get-caller-identity
+
+      - name: Login to Amazon ECR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2.1.6
+
+      - name: Build Docker image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build \
+            --pull \
+            -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" \
+            .
+
+      - name: Push Docker image to ECR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker push \
+            "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
