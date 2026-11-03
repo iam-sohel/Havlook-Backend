@@ -1,14 +1,18 @@
 package com.gesmio.havlook.product_module.productVariant.repository;
 
-import com.gesmio.havlook.product_module.productVariant.entity.ProductVariantStatus;
 import com.gesmio.havlook.product_module.productVariant.entity.ProductVariantEntity;
+import com.gesmio.havlook.product_module.productVariant.entity.ProductVariantStatus;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
+@Repository
 public interface ProductVariantRepository
         extends JpaRepository<ProductVariantEntity, Long> {
 
@@ -27,15 +31,18 @@ public interface ProductVariantRepository
             Long productId
     );
 
-    /*
-     * Query optimization:
-     * Load only ACTIVE variants from the database.
-     *
-     * This prevents inactive variants from being loaded into
-     * application memory and filtered later in Java.
-     */
     List<ProductVariantEntity> findByProductEntity_IdAndStatus(
             Long productId,
+            ProductVariantStatus status
+    );
+
+    List<ProductVariantEntity> findByProductEntity_IdInAndStatus(
+            List<Long> productIds,
+            ProductVariantStatus status
+    );
+
+    List<ProductVariantEntity> findByIdInAndStatus(
+            Collection<Long> ids,
             ProductVariantStatus status
     );
 
@@ -52,13 +59,6 @@ public interface ProductVariantRepository
 
     Optional<ProductVariantEntity> findByIdAndStatus(
             Long id,
-            ProductVariantStatus status
-    );
-
-    // Batch fetch ACTIVE variants for all products on a page
-    List<ProductVariantEntity>
-    findByProductEntity_IdInAndStatus(
-            List<Long> productIds,
             ProductVariantStatus status
     );
 }
