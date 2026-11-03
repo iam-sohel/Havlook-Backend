@@ -58,7 +58,7 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
           format: table
-          skip-dirs: node_modules,.git,.mvn
+          skip-dirs: node_modules,.git,.mvn\
 
   # --------------------------------------------------
   # JOB 2: JAVA BUILD AND TESTS
