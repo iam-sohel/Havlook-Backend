@@ -23,6 +23,10 @@ import java.time.LocalDateTime;
                 @Index(
                         name = "idx_order_items_variant_id",
                         columnList = "product_variant_id"
+                ),
+                @Index(
+                        name = "idx_order_items_inventory_item_id",
+                        columnList = "inventory_item_id"
                 )
         }
 )
@@ -37,9 +41,7 @@ public class OrderItemEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // =========================================================
     // ORDER
-    // =========================================================
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(
@@ -48,9 +50,7 @@ public class OrderItemEntity {
     )
     private OrderEntity order;
 
-    // =========================================================
     // PRODUCT REFERENCE
-    // =========================================================
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(
@@ -59,9 +59,7 @@ public class OrderItemEntity {
     )
     private ProductEntity product;
 
-    // =========================================================
     // PRODUCT VARIANT REFERENCE
-    // =========================================================
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(
@@ -70,9 +68,12 @@ public class OrderItemEntity {
     )
     private ProductVariantEntity productVariant;
 
-    // =========================================================
+    // EXACT INVENTORY ALLOCATION
+
+    @Column(name = "inventory_item_id")
+    private Long inventoryItemId;
+
     // PRODUCT SNAPSHOT
-    // =========================================================
 
     @Column(
             name = "product_name",
@@ -88,9 +89,7 @@ public class OrderItemEntity {
     )
     private String sku;
 
-    // =========================================================
     // QUANTITY
-    // =========================================================
 
     @Column(
             name = "quantity",
@@ -98,9 +97,7 @@ public class OrderItemEntity {
     )
     private Integer quantity;
 
-    // =========================================================
     // PRICE SNAPSHOT
-    // =========================================================
 
     @Column(
             name = "price",
@@ -143,9 +140,7 @@ public class OrderItemEntity {
     )
     private BigDecimal lineTotal;
 
-    // =========================================================
     // TIMESTAMPS
-    // =========================================================
 
     @Column(
             name = "created_at",
@@ -160,9 +155,7 @@ public class OrderItemEntity {
     )
     private LocalDateTime updatedAt;
 
-    // =========================================================
     // JPA CALLBACKS
-    // =========================================================
 
     @PrePersist
     protected void onCreate() {
