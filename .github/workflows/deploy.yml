@@ -1,8 +1,10 @@
+
 name: HavLook Backend CI - ECR
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -13,44 +15,197 @@ concurrency:
   group: havlook-ecr-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  AWS_REGION: ap-south-2
+  AWS_ACCOUNT_ID: "965825500661"
+  ECR_REPOSITORY: havlook/backend
+  AWS_ROLE_ARN: arn:aws:iam::965825500661:role/HavlookGitHubActionsECRRole
+
 jobs:
   build-and-push:
+    name: Build Java and Push ARM64 Docker Image
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
     steps:
+      # -----------------------------------------
+      # 1. CHECKOUT SOURCE
+      # -----------------------------------------
       - name: Checkout source
         uses: actions/checkout@v4
 
+      # -----------------------------------------
+      # 2. JAVA 21
+      # -----------------------------------------
       - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: "21"
           cache: maven
 
-      - name: Build and test
-        run: mvn -B clean verify
+      # -----------------------------------------
+      # 3. MAVEN BUILD AND TEST
+      # -----------------------------------------
+      - name: Build and test Spring Boot
+        run: mvn -B --no-transfer-progress clean verify
 
+      # -----------------------------------------
+      # 4. SAFE GITHUB OIDC DIAGNOSTICS
+      # -----------------------------------------
+      - name: Diagnose GitHub OIDC identity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Checking GitHub OIDC identity..."
+
+          python3 - <<'PY'
+          import os
+          import json
+          import base64
+          import urllib.request
+
+          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+          token = os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
+
+          separator = "&" if "?" in url else "?"
+          url += separator + "audience=sts.amazonaws.com"
+
+          request = urllib.request.Request(
+              url,
+              headers={"Authorization": "Bearer " + token}
+          )
+
+          with urllib.request.urlopen(
+              request, timeout=20
+          ) as response:
+              data = json.load(response)
+
+          jwt = data["value"]
+          payload = jwt.split(".")[1]
+          payload += "=" * (-len(payload) % 4)
+
+          claims = json.loads(
+              base64.urlsafe_b64decode(payload)
+          )
+
+          safe_fields = [
+              "iss",
+              "aud",
+              "sub",
+              "repository",
+              "ref",
+              "event_name"
+          ]
+
+          print("OIDC claims:")
+          for field in safe_fields:
+              print(
+                  field + ":",
+                  claims.get(field, "NOT_FOUND")
+              )
+
+          expected_issuer = (
+              "https://token.actions.githubusercontent.com"
+          )
+          expected_audience = "sts.amazonaws.com"
+          expected_subject = (
+              "repo:iam-sohel/Havlook-Backend:"
+              "ref:refs/heads/main"
+          )
+
+          checks = {
+              "iss": expected_issuer,
+              "aud": expected_audience,
+              "sub": expected_subject
+          }
+
+          failed = False
+
+          for key, expected in checks.items():
+              if claims.get(key) != expected:
+                  print(
+                      "::error::OIDC mismatch for " + key
+                  )
+                  failed = True
+
+          if failed:
+              raise SystemExit(1)
+
+          print("OIDC claims match expected values.")
+          PY
+
+      # -----------------------------------------
+      # 5. CONFIGURE AWS CREDENTIALS VIA OIDC
+      # -----------------------------------------
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: HavlookGitHubActions
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+          retry-max-attempts: 3
+
+      # -----------------------------------------
+      # 6. VERIFY AWS ACCOUNT
+      # -----------------------------------------
+      - name: Verify AWS identity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ACCOUNT=$(aws sts get-caller-identity \
+            --query Account \
+            --output text)
+
+          if [ "$ACCOUNT" != "$AWS_ACCOUNT_ID" ]; then
+            echo "::error::Unexpected AWS account"
+            exit 1
+          fi
+
+          echo "AWS account verified."
+
+      # -----------------------------------------
+      # 7. ECR LOGIN
+      # -----------------------------------------
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # -----------------------------------------
+      # 8. ARM64 BUILD SUPPORT
+      # -----------------------------------------
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Configure AWS credentials using OIDC
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::965825500661:role/HavlookGitHubActionsECRRole
-          aws-region: ap-south-2
-
-      - name: Login to Amazon ECR
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
+      # -----------------------------------------
+      # 9. BUILD AND PUSH DOCKER IMAGE
+      # -----------------------------------------
       - name: Build and push ARM64 image
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: ./Dockerfile
           platforms: linux/arm64
           push: true
-          tags: ${{ steps.ecr.outputs.registry }}/havlook/backend:sha-${{ github.sha }}
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/havlook/backend:sha-${{ github.sha }}
           provenance: false
+
+      # -----------------------------------------
+      # 10. SUCCESS SUMMARY
+      # -----------------------------------------
+      - name: Deployment image summary
+        if: success()
+        run: |
+          echo "### HavLook ECR Build Success" >> "$GITHUB_STEP_SUMMARY"
+          echo "Region: ap-south-2" >> "$GITHUB_STEP_SUMMARY"
+          echo "Repository: havlook/backend" >> "$GITHUB_STEP_SUMMARY"
+          echo "Architecture: linux/arm64" >> "$GITHUB_STEP_SUMMARY"
+          echo "Commit: $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "EC2 deployment: Not enabled" >> "$GITHUB_STEP_SUMMARY"
