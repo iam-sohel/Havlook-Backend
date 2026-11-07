@@ -1,4 +1,3 @@
-
 name: HavLook Backend CI - ECR
 
 on:
@@ -111,7 +110,8 @@ jobs:
           )
           expected_audience = "sts.amazonaws.com"
           expected_subject = (
-              "repo:iam-sohel/Havlook-Backend:"
+              "repo:iam-sohel@128901095/"
+              "Havlook-Backend@1428055740:"
               "ref:refs/heads/main"
           )
 
