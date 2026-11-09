@@ -5,6 +5,7 @@ import com.gesmio.havlook.auth_module.util.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -28,6 +29,9 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @Value("${app.security.cors.allowed-origins}")
+    private List<String> allowedCorsOrigins;
 
     @Bean
     public SecurityFilterChain securityFilterChain(
@@ -142,6 +146,7 @@ public class SecurityConfig {
                         .requestMatchers(
                                 HttpMethod.POST,
                                 "/api/v1/auth/forgot-password",
+                                "/api/v1/auth/forgot-password/verify-otp",
                                 "/api/v1/auth/reset-password"
                         )
                         .permitAll()
@@ -195,11 +200,11 @@ public class SecurityConfig {
         CorsConfiguration configuration =
                 new CorsConfiguration();
 
-        configuration.setAllowedOrigins(List.of(
-                "http://localhost:3000",
-                "http://localhost:5173",
-                "http://10.0.2.2:3000"
-        ));
+        configuration.setAllowedOrigins(allowedCorsOrigins.stream()
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
+                .distinct()
+                .toList());
 
         configuration.setAllowedMethods(List.of(
                 "GET",
