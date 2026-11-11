@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice(
-        basePackages = "com.gesmio.havlook.cart_module.controller"
+        basePackages = "com.gesmio.havlook.cart_module"
 )
 public class CartExceptionHandler {
 

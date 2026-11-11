@@ -1,3 +1,4 @@
+
 package com.gesmio.havlook.user_module.controller;
 
 import com.gesmio.havlook.common.dto.CommonResponseDto;
@@ -19,20 +20,16 @@ public class UserController {
 
     private final UserService userService;
 
-    // ============================================================
     // GET MY PROFILE
-    // ============================================================
-
     @GetMapping("/me")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<CommonResponseDto<UserResponse>> getMyProfile(
             Authentication authentication
     ) {
 
-        UserResponse response =
-                userService.getMyProfile(
-                        authentication.getName()
-                );
+        UserResponse response = userService.getMyProfile(
+                authentication.getName()
+        );
 
         return ResponseEntity.ok(
                 new CommonResponseDto<>(
@@ -43,10 +40,7 @@ public class UserController {
         );
     }
 
-    // ============================================================
     // UPDATE MY PROFILE
-    // ============================================================
-
     @PutMapping("/me")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<CommonResponseDto<UserResponse>> updateMyProfile(
@@ -54,11 +48,10 @@ public class UserController {
             @Valid @RequestBody UserUpdateRequest request
     ) {
 
-        UserResponse response =
-                userService.updateMyProfile(
-                        authentication.getName(),
-                        request
-                );
+        UserResponse response = userService.updateMyProfile(
+                authentication.getName(),
+                request
+        );
 
         return ResponseEntity.ok(
                 new CommonResponseDto<>(
@@ -69,10 +62,7 @@ public class UserController {
         );
     }
 
-    // ============================================================
     // CHANGE PASSWORD
-    // ============================================================
-
     @PatchMapping("/me/password")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<CommonResponseDto<Void>> changePassword(
@@ -94,10 +84,7 @@ public class UserController {
         );
     }
 
-    // ============================================================
     // DEACTIVATE ACCOUNT
-    // ============================================================
-
     @PatchMapping("/me/deactivate")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<CommonResponseDto<Void>> deactivateMyAccount(
