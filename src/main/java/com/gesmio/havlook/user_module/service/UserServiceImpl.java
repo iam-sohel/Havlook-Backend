@@ -1,5 +1,5 @@
-package com.gesmio.havlook.user_module.service;
 
+package com.gesmio.havlook.user_module.service;
 
 import com.gesmio.havlook.user_module.dto.ChangePasswordRequest;
 import com.gesmio.havlook.user_module.dto.UserResponse;
@@ -27,20 +27,20 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
-    public UserResponse getMyProfile(String email) {
+    public UserResponse getMyProfile(String userId) {
 
-        User user = getUserByEmail(email);
+        User user = getUserById(userId);
 
         return userMapper.toResponse(user);
     }
 
     @Override
     public UserResponse updateMyProfile(
-            String email,
+            String userId,
             UserUpdateRequest request
     ) {
 
-        User user = getUserByEmail(email);
+        User user = getUserById(userId);
 
         String newPhone = request.getPhone().trim();
 
@@ -63,11 +63,11 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public void changePassword(
-            String email,
+            String userId,
             ChangePasswordRequest request
     ) {
 
-        User user = getUserByEmail(email);
+        User user = getUserById(userId);
 
         if (!passwordEncoder.matches(
                 request.getCurrentPassword(),
@@ -105,25 +105,34 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public void deactivateMyAccount(String email) {
+    public void deactivateMyAccount(String userId) {
 
-        User user = getUserByEmail(email);
+        User user = getUserById(userId);
 
         user.setEnabled(false);
 
         userRepository.save(user);
     }
 
-    private User getUserByEmail(String email) {
+    private User getUserById(String userId) {
 
-        if (email == null || email.isBlank()) {
+        if (userId == null || userId.isBlank()) {
             throw new UserNotFoundException(
-                    "User email is required"
+                    "User ID is required"
             );
         }
 
-        return userRepository
-                .findByEmailIgnoreCase(email.trim())
+        Long id;
+
+        try {
+            id = Long.valueOf(userId.trim());
+        } catch (NumberFormatException ex) {
+            throw new UserNotFoundException(
+                    "Invalid user ID"
+            );
+        }
+
+        return userRepository.findById(id)
                 .orElseThrow(() ->
                         new UserNotFoundException(
                                 "User not found"

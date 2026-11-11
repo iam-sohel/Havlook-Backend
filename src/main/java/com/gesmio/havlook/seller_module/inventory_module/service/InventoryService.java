@@ -6,95 +6,57 @@ import com.gesmio.havlook.seller_module.inventory_module.dto.InventoryResponse;
 import com.gesmio.havlook.seller_module.inventory_module.dto.InventoryUpdateRequest;
 
 import java.util.List;
+import java.util.Map;
 
 public interface InventoryService {
 
-    // Seller inventory management
+    InventoryResponse createInventory(Long userId, InventoryCreateRequest request);
 
-    InventoryResponse createInventory(
-            Long userId,
-            InventoryCreateRequest request);
-
-    InventoryResponse getInventoryByWarehouse(
-            Long userId,
-            Long warehouseId);
+    InventoryResponse getInventoryByWarehouse(Long userId, Long warehouseId);
 
     InventoryResponse updateInventoryItem(
-            Long userId,
-            Long inventoryItemId,
-            InventoryUpdateRequest request);
+            Long userId, Long inventoryItemId, InventoryUpdateRequest request);
 
-    void deleteInventoryItem(
-            Long userId,
-            Long inventoryItemId);
+    void deleteInventoryItem(Long userId, Long inventoryItemId);
 
-    // Existing global inventory lookup methods.
-    // Preserve these for existing internal callers.
+    List<InventoryItemResponse> getInventoryItemsByProductVariantId(Long productVariantId);
 
-    List<InventoryItemResponse> getInventoryItemsByProductVariantId(
-            Long productVariantId);
+    Integer getTotalAvailableStock(Long productVariantId);
 
-    Integer getTotalAvailableStock(
-            Long productVariantId);
+    List<InventoryItemResponse> getInventoryItemsByProductVariantIdForSeller(
+            Long userId, Long productVariantId);
 
-    // Seller-scoped inventory lookup methods.
+    Integer getTotalAvailableStockForSeller(Long userId, Long productVariantId);
 
-    List<InventoryItemResponse>
-    getInventoryItemsByProductVariantIdForSeller(
-            Long userId,
-            Long productVariantId);
+    // Warehouse-aware operations
 
-    Integer getTotalAvailableStockForSeller(
-            Long userId,
-            Long productVariantId);
+    void addStock(Long warehouseId, Long productVariantId, Integer quantity);
+    void reserveStock(Long warehouseId, Long productVariantId, Integer quantity);
+    void releaseStock(Long warehouseId, Long productVariantId, Integer quantity);
+    void deductStock(Long warehouseId, Long productVariantId, Integer quantity);
+    void restoreStock(Long warehouseId, Long productVariantId, Integer quantity);
 
-    // Warehouse-aware stock operations
+    // Backward-compatible operations
 
-    void addStock(
-            Long warehouseId,
-            Long productVariantId,
-            Integer quantity);
+    void addStock(Long productVariantId, Integer quantity);
+    void reserveStock(Long productVariantId, Integer quantity);
+    void releaseStock(Long productVariantId, Integer quantity);
+    void deductStock(Long productVariantId, Integer quantity);
+    void restoreStock(Long productVariantId, Integer quantity);
 
-    void reserveStock(
-            Long warehouseId,
-            Long productVariantId,
-            Integer quantity);
+    // Order-specific inventory allocation operations
 
-    void releaseStock(
-            Long warehouseId,
-            Long productVariantId,
-            Integer quantity);
+    Long reserveStockForOrder(Long productVariantId, Integer quantity);
 
-    void deductStock(
-            Long warehouseId,
-            Long productVariantId,
-            Integer quantity);
+    Map<Long, Long> reserveStockForOrder(
+            Map<Long, Integer> quantitiesByVariantId);
 
-    void restoreStock(
-            Long warehouseId,
-            Long productVariantId,
-            Integer quantity);
+    void releaseReservedStockForOrder(
+            Long inventoryItemId, Long productVariantId, Integer quantity);
 
-    // Backward-compatible methods used by OrderService.
-    // Do not remove without checking all existing callers.
+    void deductReservedStockForOrder(
+            Long inventoryItemId, Long productVariantId, Integer quantity);
 
-    void addStock(
-            Long productVariantId,
-            Integer quantity);
-
-    void reserveStock(
-            Long productVariantId,
-            Integer quantity);
-
-    void releaseStock(
-            Long productVariantId,
-            Integer quantity);
-
-    void deductStock(
-            Long productVariantId,
-            Integer quantity);
-
-    void restoreStock(
-            Long productVariantId,
-            Integer quantity);
+    void restoreReturnedStockForOrder(
+            Long inventoryItemId, Long productVariantId, Integer quantity);
 }

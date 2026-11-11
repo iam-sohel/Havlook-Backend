@@ -53,6 +53,15 @@ public class CartController {
             @Valid @RequestBody
             CartItemAddRequestDTO request) {
 
+
+            System.out.println("========== CART ADD ITEM ==========");
+            System.out.println("Authentication: " + authentication);
+            System.out.println("Authenticated: " +
+                    (authentication != null && authentication.isAuthenticated()));
+            System.out.println("Variant ID: " + request.getProductVariantId());
+            System.out.println("===================================");
+
+
         String userEmail = authentication.getName();
 
         CartResponseDTO response =
