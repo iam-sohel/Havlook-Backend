@@ -101,3 +101,11 @@ jobs:
             --batch-mode \
             --no-transfer-progress \
             clean verify
+
+      - name: Upload tested backend JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: havlook-backend-jar
+          path: target/*.jar
+          if-no-files-found: error
+          retention-days: 1
