@@ -1,63 +1,76 @@
-name: HavLook Backend CI - ECR
+
+name: HavLook Backend CI/CD - AWS Production
 
 on:
   push:
     branches:
       - main
+
   workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
-  group: havlook-ecr-${{ github.ref }}
-  cancel-in-progress: true
+  group: havlook-production-deployment
+  cancel-in-progress: false
 
 env:
   AWS_REGION: ap-south-2
   AWS_ACCOUNT_ID: "965825500661"
   ECR_REPOSITORY: havlook/backend
   AWS_ROLE_ARN: arn:aws:iam::965825500661:role/HavlookGitHubActionsECRRole
+  EC2_INSTANCE_ID: i-0eb6d293ce7f13c45
+  RUNTIME_PARAMETER: /havlook/backend/runtime-env
 
 jobs:
+
+  # =========================================
+  # JOB 1: SECURITY SCANNING AND JAVA TESTS
+  # =========================================
+
+  backend-ci:
+    name: Backend Security and Tests
+
+    uses: ./.github/workflows/backend.yml
+
+    secrets: inherit
+
+  # =========================================
+  # JOB 2: BUILD AND PUSH ARM64 IMAGE
+  # =========================================
+
   build-and-push:
-    name: Build Java and Push ARM64 Docker Image
+    name: Build and Push ARM64 Image
+
+    needs:
+      - backend-ci
+
+    if: github.ref == 'refs/heads/main'
+
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
+    permissions:
+      contents: read
+      id-token: write
+
+    outputs:
+      image_tag: ${{ steps.image.outputs.tag }}
+
     steps:
-      # -----------------------------------------
-      # 1. CHECKOUT SOURCE
-      # -----------------------------------------
+
       - name: Checkout source
         uses: actions/checkout@v4
 
-      # -----------------------------------------
-      # 2. JAVA 21
-      # -----------------------------------------
-      - name: Set up Java 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: maven
+      # -------------------------------------
+      # VERIFY GITHUB OIDC IDENTITY
+      # -------------------------------------
 
-      # -----------------------------------------
-      # 3. MAVEN BUILD AND TEST
-      # -----------------------------------------
-      - name: Build and test Spring Boot
-        run: mvn -B --no-transfer-progress clean verify
-
-      # -----------------------------------------
-      # 4. SAFE GITHUB OIDC DIAGNOSTICS
-      # -----------------------------------------
       - name: Diagnose GitHub OIDC identity
         shell: bash
         run: |
           set -euo pipefail
-
-          echo "Checking GitHub OIDC identity..."
 
           python3 - <<'PY'
           import os
@@ -89,103 +102,81 @@ jobs:
               base64.urlsafe_b64decode(payload)
           )
 
-          safe_fields = [
-              "iss",
-              "aud",
-              "sub",
-              "repository",
-              "ref",
-              "event_name"
-          ]
-
-          print("OIDC claims:")
-          for field in safe_fields:
-              print(
-                  field + ":",
-                  claims.get(field, "NOT_FOUND")
+          expected = {
+              "iss": "https://token.actions.githubusercontent.com",
+              "aud": "sts.amazonaws.com",
+              "sub": (
+                  "repo:iam-sohel@128901095/"
+                  "Havlook-Backend@1428055740:"
+                  "ref:refs/heads/main"
               )
-
-          expected_issuer = (
-              "https://token.actions.githubusercontent.com"
-          )
-          expected_audience = "sts.amazonaws.com"
-          expected_subject = (
-              "repo:iam-sohel@128901095/"
-              "Havlook-Backend@1428055740:"
-              "ref:refs/heads/main"
-          )
-
-          checks = {
-              "iss": expected_issuer,
-              "aud": expected_audience,
-              "sub": expected_subject
           }
 
-          failed = False
-
-          for key, expected in checks.items():
-              if claims.get(key) != expected:
-                  print(
-                      "::error::OIDC mismatch for " + key
+          for key, value in expected.items():
+              if claims.get(key) != value:
+                  raise SystemExit(
+                      "OIDC mismatch for " + key
                   )
-                  failed = True
 
-          if failed:
-              raise SystemExit(1)
-
-          print("OIDC claims match expected values.")
+          print("OIDC identity verified.")
           PY
 
-      # -----------------------------------------
-      # 5. CONFIGURE AWS CREDENTIALS VIA OIDC
-      # -----------------------------------------
-      - name: Configure AWS credentials using OIDC
+      # -------------------------------------
+      # AWS OIDC AUTHENTICATION
+      # -------------------------------------
+
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: HavlookGitHubActions
-          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
           retry-max-attempts: 3
 
-      # -----------------------------------------
-      # 6. VERIFY AWS ACCOUNT
-      # -----------------------------------------
-      - name: Verify AWS identity
+      - name: Verify AWS account
         shell: bash
         run: |
           set -euo pipefail
 
-          ACCOUNT=$(aws sts get-caller-identity \
+          ACCOUNT="$(aws sts get-caller-identity \
             --query Account \
-            --output text)
+            --output text)"
 
-          if [ "$ACCOUNT" != "$AWS_ACCOUNT_ID" ]; then
+          if [[ "$ACCOUNT" != "$AWS_ACCOUNT_ID" ]]; then
             echo "::error::Unexpected AWS account"
             exit 1
           fi
 
           echo "AWS account verified."
 
-      # -----------------------------------------
-      # 7. ECR LOGIN
-      # -----------------------------------------
+      # -------------------------------------
+      # ECR LOGIN
+      # -------------------------------------
+
       - name: Login to Amazon ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # -----------------------------------------
-      # 8. ARM64 BUILD SUPPORT
-      # -----------------------------------------
+      # -------------------------------------
+      # ARM64 BUILD SUPPORT
+      # -------------------------------------
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # -----------------------------------------
-      # 9. BUILD AND PUSH DOCKER IMAGE
-      # -----------------------------------------
+      - name: Prepare image tag
+        id: image
+        shell: bash
+        run: |
+          echo "tag=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      # -------------------------------------
+      # BUILD AND PUSH DOCKER IMAGE
+      # -------------------------------------
+
       - name: Build and push ARM64 image
         uses: docker/build-push-action@v6
         with:
@@ -194,18 +185,335 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: |
-            ${{ steps.ecr.outputs.registry }}/havlook/backend:sha-${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/havlook/backend:${{ steps.image.outputs.tag }}
           provenance: false
 
-      # -----------------------------------------
-      # 10. SUCCESS SUMMARY
-      # -----------------------------------------
-      - name: Deployment image summary
-        if: success()
+      - name: ECR build summary
+        shell: bash
         run: |
           echo "### HavLook ECR Build Success" >> "$GITHUB_STEP_SUMMARY"
           echo "Region: ap-south-2" >> "$GITHUB_STEP_SUMMARY"
-          echo "Repository: havlook/backend" >> "$GITHUB_STEP_SUMMARY"
           echo "Architecture: linux/arm64" >> "$GITHUB_STEP_SUMMARY"
           echo "Commit: $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
-          echo "EC2 deployment: Not enabled" >> "$GITHUB_STEP_SUMMARY"
+
+  # =========================================
+  # JOB 3: ENCRYPTED SECRETS AND EC2 DEPLOY
+  # =========================================
+
+  deploy-production:
+    name: Deploy HavLook to EC2
+
+    needs:
+      - build-and-push
+
+    if: github.ref == 'refs/heads/main'
+
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+
+      - name: Checkout deployment script
+        uses: actions/checkout@v4
+
+      - name: Configure AWS deployment credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: HavlookProductionDeploy
+          retry-max-attempts: 3
+
+      - name: Verify AWS deployment account
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ACCOUNT="$(aws sts get-caller-identity \
+            --query Account \
+            --output text)"
+
+          if [[ "$ACCOUNT" != "$AWS_ACCOUNT_ID" ]]; then
+            echo "::error::Unexpected AWS deployment account"
+            exit 1
+          fi
+
+          echo "AWS deployment account verified."
+
+      # -------------------------------------
+      # UPLOAD ENCRYPTED RUNTIME SECRETS
+      # -------------------------------------
+
+      - name: Update encrypted runtime configuration
+        id: runtime
+        shell: bash
+
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+
+          RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
+          RAZORPAY_KEY_SECRET: ${{ secrets.RAZORPAY_KEY_SECRET }}
+          RAZORPAY_WEBHOOK_SECRET: ${{ secrets.RAZORPAY_WEBHOOK_SECRET }}
+
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+
+          MSG91_AUTH_KEY: ${{ secrets.MSG91_AUTH_KEY }}
+
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_STORAGE_AUTH_KEY: ${{ secrets.SUPABASE_STORAGE_AUTH_KEY }}
+
+          SANDBOX_API_KEY: ${{ secrets.SANDBOX_API_KEY }}
+          SANDBOX_API_SECRET: ${{ secrets.SANDBOX_API_SECRET }}
+
+          NUMVERIFY_ACCESS_KEY: ${{ secrets.NUMVERIFY_ACCESS_KEY }}
+          HUNTER_API_KEY: ${{ secrets.HUNTER_API_KEY }}
+
+          APP_CORS_ALLOWED_ORIGINS: ${{ secrets.APP_CORS_ALLOWED_ORIGINS }}
+
+        run: |
+          set -euo pipefail
+          umask 077
+
+          REQUEST_FILE="$(mktemp)"
+
+          trap 'rm -f "$REQUEST_FILE"' EXIT
+
+          python3 - "$REQUEST_FILE" <<'PY'
+          import os
+          import sys
+          import json
+          from pathlib import Path
+
+          keys = [
+              "JWT_SECRET",
+              "DB_PASSWORD",
+              "RAZORPAY_KEY_ID",
+              "RAZORPAY_KEY_SECRET",
+              "RAZORPAY_WEBHOOK_SECRET",
+              "MAIL_USERNAME",
+              "MAIL_PASSWORD",
+              "MSG91_AUTH_KEY",
+              "SUPABASE_SECRET_KEY",
+              "SUPABASE_STORAGE_AUTH_KEY",
+              "SANDBOX_API_KEY",
+              "SANDBOX_API_SECRET",
+              "NUMVERIFY_ACCESS_KEY",
+              "HUNTER_API_KEY",
+              "APP_CORS_ALLOWED_ORIGINS",
+          ]
+
+          lines = []
+
+          for key in keys:
+              value = os.environ.get(key, "")
+
+              if not value:
+                  raise SystemExit(
+                      "Missing GitHub Secret: " + key
+                  )
+
+              if any(c in value for c in ("\n", "\r", "\x00")):
+                  raise SystemExit(
+                      "Unsupported multiline secret: " + key
+                  )
+
+              lines.append(f"{key}={value}")
+
+          payload = "\n".join(lines) + "\n"
+
+          if len(payload.encode("utf-8")) > 4096:
+              raise SystemExit(
+                  "Runtime configuration exceeds "
+                  "Standard Parameter Store 4 KB limit."
+              )
+
+          request = {
+              "Name": os.environ["RUNTIME_PARAMETER"],
+              "Value": payload,
+              "Type": "SecureString",
+              "KeyId": "alias/aws/ssm",
+              "Tier": "Standard",
+              "Overwrite": True
+          }
+
+          Path(sys.argv[1]).write_text(
+              json.dumps(request)
+          )
+
+          print("Runtime configuration validated.")
+          print("All required secrets are available.")
+          PY
+
+          VERSION="$(aws ssm put-parameter \
+            --region "$AWS_REGION" \
+            --cli-input-json "file://${REQUEST_FILE}" \
+            --query Version \
+            --output text)"
+
+          if [[ ! "$VERSION" =~ ^[0-9]+$ ]]; then
+            echo "::error::Invalid parameter version"
+            exit 1
+          fi
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          echo "Encrypted runtime configuration updated."
+          echo "Parameter version: ${VERSION}"
+
+      # -------------------------------------
+      # SEND DEPLOYMENT COMMAND THROUGH SSM
+      # -------------------------------------
+
+      - name: Deploy backend using AWS Systems Manager
+        id: deployment
+        shell: bash
+
+        env:
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+          PARAMETER_VERSION: ${{ steps.runtime.outputs.version }}
+
+        run: |
+          set -euo pipefail
+
+          COMMAND_FILE="$(mktemp)"
+
+          trap 'rm -f "$COMMAND_FILE"' EXIT
+
+          python3 - "$COMMAND_FILE" <<'PY'
+          import os
+          import sys
+          import json
+          import shlex
+          import base64
+          from pathlib import Path
+
+          script = Path(
+              "scripts/deploy-ec2.sh"
+          ).read_bytes()
+
+          encoded = base64.b64encode(script).decode("ascii")
+
+          tag = shlex.quote(os.environ["IMAGE_TAG"])
+
+          version = shlex.quote(
+              os.environ["PARAMETER_VERSION"]
+          )
+
+          command = (
+              "set -eu\n"
+              "umask 077\n"
+              "SCRIPT=$(mktemp /tmp/havlook-deploy.XXXXXX)\n"
+              "trap 'rm -f \"$SCRIPT\"' EXIT\n"
+              f"printf '%s' '{encoded}' | base64 -d > \"$SCRIPT\"\n"
+              "chmod 700 \"$SCRIPT\"\n"
+              f"bash \"$SCRIPT\" {tag} {version}\n"
+          )
+
+          request = {
+              "DocumentName": "AWS-RunShellScript",
+              "InstanceIds": [
+                  os.environ["EC2_INSTANCE_ID"]
+              ],
+              "Comment": "HavLook production deployment",
+              "TimeoutSeconds": 600,
+              "Parameters": {
+                  "commands": [command],
+                  "executionTimeout": ["1800"]
+              }
+          }
+
+          Path(sys.argv[1]).write_text(
+              json.dumps(request)
+          )
+          PY
+
+          COMMAND_ID="$(aws ssm send-command \
+            --region "$AWS_REGION" \
+            --cli-input-json "file://${COMMAND_FILE}" \
+            --query 'Command.CommandId' \
+            --output text)"
+
+          echo "command_id=${COMMAND_ID}" >> "$GITHUB_OUTPUT"
+
+          echo "SSM deployment command sent."
+          echo "Command ID: ${COMMAND_ID}"
+
+          # Wait for deployment result.
+          for attempt in $(seq 1 200); do
+
+            STATUS="$(aws ssm get-command-invocation \
+              --region "$AWS_REGION" \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$EC2_INSTANCE_ID" \
+              --query Status \
+              --output text 2>/dev/null || true)"
+
+            case "$STATUS" in
+
+              Success)
+                echo "HavLook deployment successful."
+
+                aws ssm get-command-invocation \
+                  --region "$AWS_REGION" \
+                  --command-id "$COMMAND_ID" \
+                  --instance-id "$EC2_INSTANCE_ID" \
+                  --query StandardOutputContent \
+                  --output text
+
+                exit 0
+                ;;
+
+              Failed|Cancelled|TimedOut|Cancelling)
+                echo "::error::SSM deployment status: ${STATUS}"
+
+                echo "Review command ${COMMAND_ID} in AWS Systems Manager."
+
+                exit 1
+                ;;
+
+              *)
+                echo "Deployment status: ${STATUS:-Waiting}"
+                ;;
+
+            esac
+
+            sleep 10
+
+          done
+
+          echo "::error::Timed out waiting for deployment."
+          echo "Check the SSM command before starting another deployment."
+          exit 1
+
+      # -------------------------------------
+      # FINAL DEPLOYMENT SUMMARY
+      # -------------------------------------
+
+      - name: Production deployment summary
+        if: success()
+        shell: bash
+
+        env:
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+          PARAMETER_VERSION: ${{ steps.runtime.outputs.version }}
+          COMMAND_ID: ${{ steps.deployment.outputs.command_id }}
+
+        run: |
+          {
+            echo "## HavLook Production Deployment Successful"
+            echo ""
+            echo "- Region: ${AWS_REGION}"
+            echo "- EC2: ${EC2_INSTANCE_ID}"
+            echo "- Architecture: linux/arm64"
+            echo "- Image tag: ${IMAGE_TAG}"
+            echo "- Runtime parameter version: ${PARAMETER_VERSION}"
+            echo "- SSM command: ${COMMAND_ID}"
+            echo "- Deployment method: AWS Systems Manager"
+            echo "- Backend port: 127.0.0.1:8080"
+          } >> "$GITHUB_STEP_SUMMARY"

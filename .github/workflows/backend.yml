@@ -1,9 +1,7 @@
-name: HavLook Backend CI/CD
+name: HavLook Backend CI
 
 on:
-  push:
-    branches:
-      - main
+  workflow_call:
 
   pull_request:
     branches:
@@ -12,21 +10,13 @@ on:
   workflow_dispatch:
 
 # Minimum permissions by default.
-# AWS OIDC permission is granted only to the publishing job.
 permissions:
   contents: read
 
 # Cancel outdated runs for the same branch.
-# Do not cancel an in-progress deployment image push unnecessarily.
 concurrency:
   group: havlook-backend-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-env:
-  AWS_REGION: us-east-1
-  AWS_ACCOUNT_ID: "289981265262"
-  ECR_REPOSITORY: havlook/backend
-  AWS_ROLE_ARN: arn:aws:iam::289981265262:role/GitHubActions-NextCart-ECR
 
 jobs:
   # --------------------------------------------------
@@ -111,154 +101,3 @@ jobs:
             --batch-mode \
             --no-transfer-progress \
             clean verify
-
-  # --------------------------------------------------
-  # JOB 3: BUILD AND PUBLISH DOCKER IMAGE TO ECR
-  # --------------------------------------------------
-  publish-image:
-    name: Build & Publish Docker Image to ECR
-
-    needs:
-      - security-scan
-      - backend-build
-
-    # Never publish an image from a pull request or another branch.
-    # Manual runs are allowed only when the selected branch is main.
-    if: >-
-      github.ref == 'refs/heads/main' &&
-      (
-        github.event_name == 'push' ||
-        github.event_name == 'workflow_dispatch'
-      )
-
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Validate AWS configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ ! "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]; then
-            echo "::error::AWS_ACCOUNT_ID must contain exactly 12 digits."
-            exit 1
-          fi
-
-          if [[ "$AWS_ROLE_ARN" != "arn:aws:iam::${AWS_ACCOUNT_ID}:role/"* ]]; then
-            echo "::error::AWS_ROLE_ARN does not match AWS_ACCOUNT_ID."
-            exit 1
-          fi
-
-          if [[ ! -f Dockerfile ]]; then
-            echo "::error::Dockerfile not found at the repository root."
-            exit 1
-          fi
-
-          echo "AWS region: $AWS_REGION"
-          echo "ECR repository: $ECR_REPOSITORY"
-
-      - name: Configure AWS credentials via GitHub OIDC
-        uses: aws-actions/configure-aws-credentials@v6.2.4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
-          role-session-name: HavLook-Backend-${{ github.run_id }}
-          aws-region: ${{ env.AWS_REGION }}
-          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
-
-      - name: Verify AWS identity
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          aws sts get-caller-identity
-
-          ACTUAL_ACCOUNT="$(aws sts get-caller-identity \
-            --query Account \
-            --output text)"
-
-          if [[ "$ACTUAL_ACCOUNT" != "$AWS_ACCOUNT_ID" ]]; then
-            echo "::error::Authenticated to an unexpected AWS account."
-            exit 1
-          fi
-
-      - name: Verify ECR repository
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          aws ecr describe-repositories \
-            --repository-names "$ECR_REPOSITORY" \
-            --region "$AWS_REGION"
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2.1.6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push Docker image
-        id: build-and-push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          pull: true
-          tags: |
-            ${{ steps.login-ecr.outputs.registry }}/havlook/backend:${{ github.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/havlook/backend:latest
-          cache-from: type=gha,scope=havlook-backend
-          cache-to: type=gha,mode=max,scope=havlook-backend
-
-      - name: Verify published ECR image tags
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Checking commit-SHA image..."
-
-          SHA_DIGEST="$(aws ecr describe-images \
-            --repository-name "$ECR_REPOSITORY" \
-            --image-ids imageTag="$IMAGE_TAG" \
-            --region "$AWS_REGION" \
-            --query 'imageDetails[0].imageDigest' \
-            --output text)"
-
-          echo "Checking latest image..."
-
-          LATEST_DIGEST="$(aws ecr describe-images \
-            --repository-name "$ECR_REPOSITORY" \
-            --image-ids imageTag=latest \
-            --region "$AWS_REGION" \
-            --query 'imageDetails[0].imageDigest' \
-            --output text)"
-
-          if [[ -z "$SHA_DIGEST" || "$SHA_DIGEST" == "None" ]]; then
-            echo "::error::Commit-SHA image was not found in ECR."
-            exit 1
-          fi
-
-          if [[ -z "$LATEST_DIGEST" || "$LATEST_DIGEST" == "None" ]]; then
-            echo "::error::The latest image tag was not found in ECR."
-            exit 1
-          fi
-
-          if [[ "$SHA_DIGEST" != "$LATEST_DIGEST" ]]; then
-            echo "::error::The commit-SHA and latest tags point to different image digests."
-            exit 1
-          fi
-
-          echo "Verified commit: $IMAGE_TAG"
-          echo "Verified image digest: $SHA_DIGEST"
-          echo "Both ECR tags point to the same image."
