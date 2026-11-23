@@ -1,3 +1,4 @@
+
 package com.gesmio.havlook.seller_module.sellerKyc.entity;
 
 import com.gesmio.havlook.seller_module.seller.entity.Seller;
@@ -8,7 +9,27 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "seller_kyc", indexes = {@Index(name = "idx_seller_kyc_seller_id", columnList = "seller_id"), @Index(name = "idx_seller_kyc_status", columnList = "status"), @Index(name = "idx_seller_kyc_gst_number", columnList = "gst_number"), @Index(name = "idx_seller_kyc_pan_number", columnList = "pan_number")})
+@Table(
+        name = "seller_kyc",
+        indexes = {
+                @Index(
+                        name = "idx_seller_kyc_seller_id",
+                        columnList = "seller_id"
+                ),
+                @Index(
+                        name = "idx_seller_kyc_status",
+                        columnList = "status"
+                ),
+                @Index(
+                        name = "idx_seller_kyc_gst_number",
+                        columnList = "gst_number"
+                ),
+                @Index(
+                        name = "idx_seller_kyc_pan_number",
+                        columnList = "pan_number"
+                )
+        }
+)
 @Getter
 @Setter
 @Builder
@@ -20,20 +41,22 @@ public class SellerKyc {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-
     // =========================================================
     // SELLER
     // =========================================================
 
     /**
      * Seller associated with this KYC.
-     * <p>
      * One seller can have one current KYC record.
      */
     @OneToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "seller_id", nullable = false, unique = true, foreignKey = @ForeignKey(name = "fk_seller_kyc_seller"))
+    @JoinColumn(
+            name = "seller_id",
+            nullable = false,
+            unique = true,
+            foreignKey = @ForeignKey(name = "fk_seller_kyc_seller")
+    )
     private Seller seller;
-
 
     // =========================================================
     // BUSINESS DETAILS
@@ -41,14 +64,6 @@ public class SellerKyc {
 
     /**
      * Business type.
-     * <p>
-     * Examples:
-     * PROPRIETORSHIP
-     * PARTNERSHIP
-     * LLP
-     * PRIVATE_LIMITED
-     * PUBLIC_LIMITED
-     * OTHER
      */
     @Enumerated(EnumType.STRING)
     @Column(name = "business_type", nullable = false, length = 30)
@@ -73,16 +88,14 @@ public class SellerKyc {
     private String registrationNumber;
 
     /**
-     * Business registration certificate PDF
-     * storage reference.
+     * Business registration certificate PDF storage reference.
      */
     @Column(name = "registration_document_url", length = 500)
     private String registrationDocumentUrl;
 
-
     // =========================================================
-// OWNER / AUTHORIZED PERSON DETAILS
-// =========================================================
+    // OWNER / AUTHORIZED PERSON DETAILS
+    // =========================================================
 
     /**
      * Owner or authorized person's full name.
@@ -92,7 +105,6 @@ public class SellerKyc {
 
     /**
      * Date of birth of owner / authorized person.
-     * Required for PAN KYC verification.
      */
     @Column(name = "date_of_birth")
     private LocalDate dateOfBirth;
@@ -105,8 +117,9 @@ public class SellerKyc {
 
     /**
      * PAN Card PDF storage reference.
+     * Nullable while KYC is in DRAFT status.
      */
-    @Column(name = "pan_document_url", nullable = false, length = 500)
+    @Column(name = "pan_document_url", length = 500)
     private String panDocumentUrl;
 
     /**
@@ -120,7 +133,6 @@ public class SellerKyc {
      */
     @Column(name = "aadhaar_document_url", length = 500)
     private String aadhaarDocumentUrl;
-
 
     // =========================================================
     // BUSINESS ADDRESS
@@ -147,10 +159,10 @@ public class SellerKyc {
 
     /**
      * Business address proof PDF storage reference.
+     * Nullable while KYC is in DRAFT status.
      */
-    @Column(name = "address_document_url", nullable = false, length = 500)
+    @Column(name = "address_document_url", length = 500)
     private String addressDocumentUrl;
-
 
     // =========================================================
     // KYC STATUS
@@ -158,11 +170,16 @@ public class SellerKyc {
 
     /**
      * Current KYC verification status.
+     *
+     * DRAFT    - KYC details saved, documents incomplete.
+     * PENDING  - Mandatory documents uploaded, awaiting admin review.
+     * VERIFIED - KYC approved by admin.
+     * REJECTED - KYC rejected by admin.
      */
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     @Builder.Default
-    private KycStatus status = KycStatus.PENDING;
+    private KycStatus status = KycStatus.DRAFT;
 
     /**
      * Reason provided by Admin when KYC is rejected.
@@ -171,7 +188,7 @@ public class SellerKyc {
     private String rejectionReason;
 
     /**
-     * Date/time when seller submitted KYC.
+     * Date/time when seller submitted KYC for review.
      */
     @Column(name = "submitted_at")
     private LocalDateTime submittedAt;
@@ -188,7 +205,6 @@ public class SellerKyc {
     @Column(name = "reviewed_by")
     private Long reviewedBy;
 
-
     // =========================================================
     // AUDIT FIELDS
     // =========================================================
@@ -198,7 +214,6 @@ public class SellerKyc {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
-
 
     // =========================================================
     // JPA CALLBACKS

@@ -1,3 +1,4 @@
+
 package com.gesmio.havlook.seller_module.sellerKyc.dto;
 
 import com.gesmio.havlook.seller_module.sellerKyc.entity.BusinessType;
@@ -17,12 +18,17 @@ import java.time.LocalDate;
 @AllArgsConstructor
 public class SellerKycRequest {
 
+    // =========================================================
+    // BUSINESS DETAILS
+    // =========================================================
+
     @NotNull(message = "Business type is required")
     private BusinessType businessType;
 
+    // Optional GST number: null or empty is allowed.
     @Size(max = 15, message = "GST number must not exceed 15 characters")
     @Pattern(
-            regexp = "(?i)^[0-9A-Z]{15}$",
+            regexp = "(?i)^(?:[0-9A-Z]{15})?$",
             message = "Invalid GST number"
     )
     private String gstNumber;
@@ -32,6 +38,10 @@ public class SellerKycRequest {
             message = "Registration number must not exceed 100 characters"
     )
     private String registrationNumber;
+
+    // =========================================================
+    // OWNER DETAILS
+    // =========================================================
 
     @NotBlank(message = "Owner name is required")
     @Size(
@@ -51,12 +61,17 @@ public class SellerKycRequest {
     @Past(message = "Date of birth must be in the past")
     private LocalDate dateOfBirth;
 
+    // Optional Aadhaar number: null or empty is allowed.
     @Size(max = 12, message = "Aadhaar number must be 12 digits")
     @Pattern(
-            regexp = "^\\d{12}$",
+            regexp = "^(?:\\d{12})?$",
             message = "Invalid Aadhaar number"
     )
     private String aadhaarNumber;
+
+    // =========================================================
+    // BUSINESS ADDRESS
+    // =========================================================
 
     @NotBlank(message = "Business address is required")
     @Size(
