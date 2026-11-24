@@ -224,17 +224,18 @@ public class ProductController {
     // =========================================================
 
     @GetMapping("/subcategory/{subCategoryId}")
-    public ResponseEntity<
-            CommonResponseDto<Page<ProductResponse>>
-            > getProductsBySubCategory(
+    public ResponseEntity<CommonResponseDto<Page<ProductResponse>>>
+    getProductsBySubCategory(
             @PathVariable Long subCategoryId,
-            @PageableDefault(
-                    size = 20,
-                    sort = "name",
-                    direction = Sort.Direction.ASC
-            )
-            Pageable pageable
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
+
+        Pageable pageable = PageRequest.of(
+                page,
+                size,
+                Sort.by(Sort.Direction.ASC, "name")
+        );
 
         Page<ProductResponse> response =
                 productService.getProductsBySubCategory(

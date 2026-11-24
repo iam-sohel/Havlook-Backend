@@ -565,8 +565,14 @@ public class ProductServiceImpl implements ProductService {
                 .categoryId(
                         product.getCategory().getId()
                 )
+                .categoryName(
+                        product.getCategory().getName()
+                )
                 .subCategoryId(
                         product.getSubCategory().getId()
+                )
+                .subCategoryName(
+                        product.getSubCategory().getName()
                 )
                 .brandId(
                         product.getBrand() != null
@@ -938,8 +944,14 @@ public class ProductServiceImpl implements ProductService {
                                     .categoryId(
                                             product.getCategory().getId()
                                     )
+                                    .categoryName(
+                                            product.getCategory().getName()
+                                    )
                                     .subCategoryId(
                                             product.getSubCategory().getId()
+                                    )
+                                    .subCategoryName(
+                                            product.getSubCategory().getName()
                                     )
                                     .brandId(
                                             product.getBrand() != null
@@ -1509,4 +1521,5 @@ public class ProductServiceImpl implements ProductService {
     }
 
 }
+
 

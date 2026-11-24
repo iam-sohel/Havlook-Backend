@@ -31,10 +31,20 @@ public class ProductMapper {
                                 ? productEntity.getCategory().getId()
                                 : null
                 )
+                .categoryName(
+                        productEntity.getCategory() != null
+                                ? productEntity.getCategory().getName()
+                                : null
+                )
 
                 .subCategoryId(
                         productEntity.getSubCategory() != null
                                 ? productEntity.getSubCategory().getId()
+                                : null
+                )
+                .subCategoryName(
+                        productEntity.getSubCategory() != null
+                                ? productEntity.getSubCategory().getName()
                                 : null
                 )
 
@@ -55,7 +65,8 @@ public class ProductMapper {
 
     public void updateEntity(
             ProductUpdateRequest request,
-            ProductEntity productEntity) {
+            ProductEntity productEntity
+    ) {
 
         productEntity.setName(request.getName());
         productEntity.setSlug(request.getSlug());
