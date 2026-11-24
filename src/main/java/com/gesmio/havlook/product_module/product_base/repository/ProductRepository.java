@@ -4,6 +4,7 @@ package com.gesmio.havlook.product_module.product_base.repository;
 import com.gesmio.havlook.product_module.product_base.dto.ProductResponse;
 import com.gesmio.havlook.product_module.product_base.entity.ProductStatus;
 import com.gesmio.havlook.product_module.product_base.entity.ProductEntity;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -43,14 +44,19 @@ public interface ProductRepository extends JpaRepository<ProductEntity, Long> {
             Pageable pageable
     );
 
-    // Category products - DTO Projection
+    // ============================
+    // Category Products - DTO Projection
+    // ============================
+
     @Query(
             value = """
             SELECT new com.gesmio.havlook.product_module.product_base.dto.ProductResponse(
                 p.id,
-                p.category.id,
-                p.subCategory.id,
-                p.brand.id,
+                c.id,
+                c.name,
+                sc.id,
+                sc.name,
+                b.id,
                 p.name,
                 p.slug,
                 p.description,
@@ -59,14 +65,19 @@ public interface ProductRepository extends JpaRepository<ProductEntity, Long> {
                 p.updatedAt
             )
             FROM ProductEntity p
-            WHERE p.category.id = :categoryId
+            JOIN p.category c
+            JOIN p.subCategory sc
+            LEFT JOIN p.brand b
+            WHERE c.id = :categoryId
               AND p.status = :status
             ORDER BY p.name ASC
             """,
             countQuery = """
             SELECT COUNT(p)
             FROM ProductEntity p
-            WHERE p.category.id = :categoryId
+            JOIN p.category c
+            JOIN p.subCategory sc
+            WHERE c.id = :categoryId
               AND p.status = :status
             """
     )
@@ -76,17 +87,29 @@ public interface ProductRepository extends JpaRepository<ProductEntity, Long> {
             Pageable pageable
     );
 
+    // ============================
+    // SubCategory Products
+    // ============================
+
     Page<ProductEntity> findAllBySubCategoryIdAndStatus(
             Long subCategoryId,
             ProductStatus status,
             Pageable pageable
     );
 
+    // ============================
+    // Brand Products
+    // ============================
+
     Page<ProductEntity> findAllByBrandIdAndStatus(
             Long brandId,
             ProductStatus status,
             Pageable pageable
     );
+
+    // ============================
+    // Seller Products
+    // ============================
 
     Optional<ProductEntity> findByIdAndSellerId(
             Long id,
@@ -119,6 +142,10 @@ public interface ProductRepository extends JpaRepository<ProductEntity, Long> {
             Long sellerId,
             ProductStatus status
     );
+
+    // ============================
+    // Product Search
+    // ============================
 
     @Query("""
         SELECT p

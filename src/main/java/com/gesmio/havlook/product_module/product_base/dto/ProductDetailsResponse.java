@@ -1,3 +1,4 @@
+
 package com.gesmio.havlook.product_module.product_base.dto;
 
 import com.gesmio.havlook.product_module.productImage.dto.ProductImageResponse;
@@ -25,7 +26,11 @@ public class ProductDetailsResponse {
 
     private Long categoryId;
 
+    private String categoryName;
+
     private Long subCategoryId;
+
+    private String subCategoryName;
 
     private Long brandId;
 

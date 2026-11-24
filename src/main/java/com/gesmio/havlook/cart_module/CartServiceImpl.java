@@ -23,6 +23,8 @@ import com.gesmio.havlook.product_module.productVariant.entity.ProductVariantSta
 import com.gesmio.havlook.user_module.entity.User;
 import com.gesmio.havlook.user_module.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -79,6 +81,24 @@ public class CartServiceImpl implements CartService {
     public CartResponseDTO addItem(
             String userIdentifier,
             CartItemAddRequestDTO request) {
+
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        System.out.println("Authentication: " + authentication);
+        System.out.println("Authenticated: " +
+                (authentication != null && authentication.isAuthenticated()));
+
+        if (authentication != null) {
+            System.out.println("Principal: " +
+                    authentication.getPrincipal());
+
+            System.out.println("Authorities: " +
+                    authentication.getAuthorities());
+
+            System.out.println("Username: " +
+                    authentication.getName());
+        }
 
         if (request == null) {
             throw new InvalidCartQuantityException(

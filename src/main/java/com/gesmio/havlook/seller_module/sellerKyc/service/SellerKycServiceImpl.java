@@ -54,24 +54,11 @@ public class SellerKycServiceImpl implements SellerKycService {
     @Value("${supabase.url}")
     private String supabaseUrl;
     /*
-     * New Supabase secret key.
-     *
-     * Example:
-     * sb_secret_...
-     *
-     * This key is sent using the "apikey" header.
+     * Supabase secret API key (sb_secret_...).
+     * This is a non-JWT key and must be sent using the apikey header only.
      */
     @Value("${supabase.service-role-key}")
     private String supabaseSecretKey;
-    /*
-     * Legacy Supabase service_role JWT.
-     *
-     * This key is sent using:
-     *
-     * Authorization: Bearer <JWT>
-     */
-    @Value("${supabase.storage-authorization-key}")
-    private String supabaseStorageAuthorizationKey;
 
     // =========================================================
     // CONSTANTS
@@ -195,13 +182,9 @@ public class SellerKycServiceImpl implements SellerKycService {
                             )
                     )
 
-                    .status(
-                            KycStatus.PENDING
-                    )
+                    .status(KycStatus.DRAFT)
 
-                    .submittedAt(
-                            LocalDateTime.now()
-                    )
+                    .submittedAt(null)
 
                     .build();
 
@@ -283,19 +266,8 @@ public class SellerKycServiceImpl implements SellerKycService {
             // NEW REVIEW CYCLE
             // -------------------------------------------------
 
-            kyc.setStatus(
-                    KycStatus.PENDING
-            );
-
-            kyc.setRejectionReason(null);
-
-            kyc.setReviewedAt(null);
-
-            kyc.setReviewedBy(null);
-
-            kyc.setSubmittedAt(
-                    LocalDateTime.now()
-            );
+            clearReviewMetadata(kyc);
+            updateSubmissionStatus(kyc);
         }
 
         SellerKyc savedKyc =
@@ -476,19 +448,8 @@ public class SellerKycServiceImpl implements SellerKycService {
         // NEW REVIEW REQUIRED
         // -----------------------------------------------------
 
-        kyc.setStatus(
-                KycStatus.PENDING
-        );
-
-        kyc.setRejectionReason(null);
-
-        kyc.setReviewedAt(null);
-
-        kyc.setReviewedBy(null);
-
-        kyc.setSubmittedAt(
-                LocalDateTime.now()
-        );
+        clearReviewMetadata(kyc);
+        updateSubmissionStatus(kyc);
 
         SellerKyc updatedKyc =
                 sellerKycRepository.save(kyc);
@@ -550,13 +511,19 @@ public class SellerKycServiceImpl implements SellerKycService {
             );
         }
 
+        // Validate every supplied file before uploading any file.
+        // This prevents a later invalid file from leaving earlier uploads orphaned.
+        if (hasFile(panDocument)) validatePdf(panDocument);
+        if (hasFile(aadhaarDocument)) validatePdf(aadhaarDocument);
+        if (hasFile(gstDocument)) validatePdf(gstDocument);
+        if (hasFile(registrationDocument)) validatePdf(registrationDocument);
+        if (hasFile(addressDocument)) validatePdf(addressDocument);
+
         // -----------------------------------------------------
         // PAN DOCUMENT
         // -----------------------------------------------------
 
         if (hasFile(panDocument)) {
-
-            validatePdf(panDocument);
 
             String url =
                     uploadToSupabase(
@@ -574,8 +541,6 @@ public class SellerKycServiceImpl implements SellerKycService {
 
         if (hasFile(aadhaarDocument)) {
 
-            validatePdf(aadhaarDocument);
-
             String url =
                     uploadToSupabase(
                             aadhaarDocument,
@@ -591,8 +556,6 @@ public class SellerKycServiceImpl implements SellerKycService {
         // -----------------------------------------------------
 
         if (hasFile(gstDocument)) {
-
-            validatePdf(gstDocument);
 
             String url =
                     uploadToSupabase(
@@ -610,8 +573,6 @@ public class SellerKycServiceImpl implements SellerKycService {
 
         if (hasFile(registrationDocument)) {
 
-            validatePdf(registrationDocument);
-
             String url =
                     uploadToSupabase(
                             registrationDocument,
@@ -628,8 +589,6 @@ public class SellerKycServiceImpl implements SellerKycService {
 
         if (hasFile(addressDocument)) {
 
-            validatePdf(addressDocument);
-
             String url =
                     uploadToSupabase(
                             addressDocument,
@@ -641,27 +600,51 @@ public class SellerKycServiceImpl implements SellerKycService {
         }
 
         // -----------------------------------------------------
-        // NEW REVIEW CYCLE
+        // SUBMISSION STATUS
         // -----------------------------------------------------
 
-        kyc.setStatus(
-                KycStatus.PENDING
-        );
-
-        kyc.setRejectionReason(null);
-
-        kyc.setReviewedAt(null);
-
-        kyc.setReviewedBy(null);
-
-        kyc.setSubmittedAt(
-                LocalDateTime.now()
-        );
+        clearReviewMetadata(kyc);
+        updateSubmissionStatus(kyc);
 
         SellerKyc savedKyc =
                 sellerKycRepository.save(kyc);
 
         return mapToResponse(savedKyc);
+    }
+
+    // =========================================================
+    // KYC DRAFT / SUBMISSION STATUS HELPERS
+    // =========================================================
+
+    /**
+     * A KYC can enter PENDING only after both mandatory documents
+     * (PAN and address proof) have been uploaded. Existing document
+     * URLs are retained when the seller updates KYC details.
+     */
+    private void updateSubmissionStatus(SellerKyc kyc) {
+
+        boolean hasPanDocument =
+                kyc.getPanDocumentUrl() != null
+                        && !kyc.getPanDocumentUrl().isBlank();
+
+        boolean hasAddressDocument =
+                kyc.getAddressDocumentUrl() != null
+                        && !kyc.getAddressDocumentUrl().isBlank();
+
+        if (hasPanDocument && hasAddressDocument) {
+            kyc.setStatus(KycStatus.PENDING);
+            kyc.setSubmittedAt(LocalDateTime.now());
+        } else {
+            kyc.setStatus(KycStatus.DRAFT);
+            kyc.setSubmittedAt(null);
+        }
+    }
+
+    /** Clears the previous admin review when the seller changes KYC. */
+    private void clearReviewMetadata(SellerKyc kyc) {
+        kyc.setRejectionReason(null);
+        kyc.setReviewedAt(null);
+        kyc.setReviewedBy(null);
     }
 
     // =========================================================
@@ -765,13 +748,7 @@ public class SellerKycServiceImpl implements SellerKycService {
             }
             if (supabaseSecretKey == null || supabaseSecretKey.isBlank()) {
                 throw new SellerKycDocumentUploadException(
-                        "Supabase API key is not configured"
-                );
-            }
-            if (supabaseStorageAuthorizationKey == null
-                    || supabaseStorageAuthorizationKey.isBlank()) {
-                throw new SellerKycDocumentUploadException(
-                        "Supabase authorization key is not configured"
+                        "Supabase secret key is not configured"
                 );
             }
             if (kycBucket == null || kycBucket.isBlank()) {
@@ -783,16 +760,10 @@ public class SellerKycServiceImpl implements SellerKycService {
             String baseUrl = supabaseUrl.trim().replaceAll("/+$", "");
             String bucket = kycBucket.trim();
             String apiKey = supabaseSecretKey.trim();
-            String authorizationKey = supabaseStorageAuthorizationKey.trim();
 
             if (!apiKey.startsWith("sb_secret_")) {
                 throw new SellerKycDocumentUploadException(
                         "Invalid Supabase secret key configuration"
-                );
-            }
-            if (!authorizationKey.startsWith("eyJ")) {
-                throw new SellerKycDocumentUploadException(
-                        "Invalid Supabase storage authorization key configuration"
                 );
             }
 
@@ -824,7 +795,7 @@ public class SellerKycServiceImpl implements SellerKycService {
 
             HttpHeaders headers = new HttpHeaders();
             headers.set("apikey", apiKey);
-            headers.setBearerAuth(authorizationKey);
+            // New sb_secret_ keys are not JWTs. Do not send them as Bearer tokens.
             headers.setContentType(MediaType.APPLICATION_PDF);
             headers.set("x-upsert", "false");
 
@@ -1150,18 +1121,18 @@ public class SellerKycServiceImpl implements SellerKycService {
                 ? ""
                 : supabaseSecretKey.trim();
 
-        String authorizationKey =
-                supabaseStorageAuthorizationKey == null
-                        ? ""
-                        : supabaseStorageAuthorizationKey.trim();
-
         if (baseUrl.isBlank()
                 || bucket.isBlank()
-                || apiKey.isBlank()
-                || authorizationKey.isBlank()) {
+                || apiKey.isBlank()) {
 
             throw new SellerKycDocumentUploadException(
                     "Supabase Storage configuration is incomplete"
+            );
+        }
+
+        if (!apiKey.startsWith("sb_secret_")) {
+            throw new SellerKycDocumentUploadException(
+                    "Invalid Supabase secret key configuration"
             );
         }
 
@@ -1292,10 +1263,7 @@ public class SellerKycServiceImpl implements SellerKycService {
 
         HttpHeaders headers = new HttpHeaders();
         headers.set("apikey", apiKey);
-        headers.set(
-                HttpHeaders.AUTHORIZATION,
-                "Bearer " + authorizationKey
-        );
+        // New sb_secret_ keys are not JWTs. Do not send them as Bearer tokens.
         headers.setContentType(MediaType.APPLICATION_JSON);
 
         String requestBody = """
