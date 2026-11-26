@@ -261,6 +261,15 @@
         </dependency>
 
         <!-- =====================================================
+             Spring Boot Test AutoConfigure (needed for @WebMvcTest in SB 4.x)
+             ===================================================== -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- =====================================================
              WireMock - Mock external services (Razorpay, MSG91, etc.)
              ===================================================== -->
         <dependency>
