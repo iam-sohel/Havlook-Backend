@@ -163,6 +163,14 @@ public class SecurityConfig {
                                 "/api/v1/brands/**"
                         )
                         .permitAll()
+                        // =================================================
+                        // RAZORPAY WEBHOOK (must be permitAll - no JWT from Razorpay)
+                        // =================================================
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/v1/payments/webhook/razorpay"
+                        )
+                        .permitAll()
 
                         // =================================================
                         // ADMIN APIs

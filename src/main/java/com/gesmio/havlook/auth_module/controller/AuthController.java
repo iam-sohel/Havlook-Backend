@@ -216,16 +216,28 @@ public class AuthController {
     refreshAccessToken(
             @Valid @RequestBody RefreshTokenRequest request) {
 
-        TokenRefreshResponse response =
-                authService.refreshAccessToken(request);
+        try {
+            TokenRefreshResponse response =
+                    authService.refreshAccessToken(request);
 
-        return ResponseEntity.ok(
-                new CommonResponseDto<>(
-                        true,
-                        "Token refreshed successfully",
-                        response
-                )
-        );
+            return ResponseEntity.ok(
+                    new CommonResponseDto<>(
+                            true,
+                            "Token refreshed successfully",
+                            response
+                    )
+            );
+        } catch (Exception ex) {
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(
+                            new CommonResponseDto<>(
+                                    false,
+                                    "Refresh token is expired or invalid. Please login again.",
+                                    null
+                            )
+                    );
+        }
     }
 
 
