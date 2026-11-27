@@ -270,6 +270,15 @@
         </dependency>
 
         <!-- =====================================================
+             Spring Boot Security Test Starter (needed for @WithMockUser in SB 4.x)
+             ===================================================== -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- =====================================================
              WireMock - Mock external services (Razorpay, MSG91, etc.)
              ===================================================== -->
         <dependency>
