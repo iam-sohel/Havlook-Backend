@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -27,6 +28,7 @@ public class ProductImageController {
     // =========================================================
 
     @PostMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'SELLER')")
     public ResponseEntity<CommonResponseDto<ProductImageResponse>> createImage(
             @Valid @RequestBody ProductImageCreateRequest request) {
 
@@ -110,6 +112,7 @@ public class ProductImageController {
     // =========================================================
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SELLER')")
     public ResponseEntity<CommonResponseDto<ProductImageResponse>> updateImage(
             @PathVariable Long id,
             @Valid @RequestBody ProductImageUpdateRequest request) {
@@ -131,6 +134,7 @@ public class ProductImageController {
     // =========================================================
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SELLER')")
     public ResponseEntity<CommonResponseDto<Void>> deleteImage(
             @PathVariable Long id) {
 
