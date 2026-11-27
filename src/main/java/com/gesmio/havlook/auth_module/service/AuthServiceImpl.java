@@ -287,7 +287,7 @@ public class AuthServiceImpl implements AuthService {
     // =========================================================
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = RegistrationExpiredException.class)
     public RegisterResponse completeRegistration(
             String email,
             String phone) {
@@ -717,7 +717,7 @@ public class AuthServiceImpl implements AuthService {
     // =========================================================
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = {OtpVerificationException.class, RegistrationExpiredException.class})
     public void verifyEmailOtp(
             VerifyEmailOtpRequest request) {
 
@@ -729,6 +729,18 @@ public class AuthServiceImpl implements AuthService {
 
         String email =
                 normalizeEmail(request.getEmail());
+
+        if (email == null) {
+            throw new InvalidAuthRequestException(
+                    "Email is required"
+            );
+        }
+
+        if (request.getOtp() == null || request.getOtp().isBlank()) {
+            throw new InvalidAuthRequestException(
+                    "OTP is required"
+            );
+        }
 
         EmailOtp emailOtp =
                 emailOtpRepository
@@ -803,7 +815,7 @@ public class AuthServiceImpl implements AuthService {
     // =========================================================
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = RegistrationExpiredException.class)
     public void verifyPhoneOtpWidget(
             String phone,
             String accessToken) {
@@ -935,7 +947,7 @@ public class AuthServiceImpl implements AuthService {
     // =========================================================
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = {OtpVerificationException.class, RegistrationExpiredException.class})
     public void verifySellerEmailOtp(
             VerifyEmailOtpRequest request) {
 
@@ -951,6 +963,12 @@ public class AuthServiceImpl implements AuthService {
         if (email == null) {
             throw new InvalidAuthRequestException(
                     "Email is required"
+            );
+        }
+
+        if (request.getOtp() == null || request.getOtp().isBlank()) {
+            throw new InvalidAuthRequestException(
+                    "OTP is required"
             );
         }
 
@@ -1031,7 +1049,7 @@ public class AuthServiceImpl implements AuthService {
     // =========================================================
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = RegistrationExpiredException.class)
     public void verifySellerPhoneOtpWidget(
             String phone,
             String accessToken) {
@@ -1341,13 +1359,19 @@ public class AuthServiceImpl implements AuthService {
     // =========================================================
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = OtpVerificationException.class)
     public String verifyResetOtp(
             VerifyResetOtpRequest request) {
 
         if (request == null) {
             throw new InvalidAuthRequestException(
                     "Reset OTP request is required"
+            );
+        }
+
+        if (request.getOtp() == null || request.getOtp().isBlank()) {
+            throw new InvalidAuthRequestException(
+                    "OTP is required"
             );
         }
 
@@ -1472,7 +1496,9 @@ public class AuthServiceImpl implements AuthService {
         }
 
         if (request.getNewPassword() == null ||
-                request.getConfirmPassword() == null) {
+                request.getNewPassword().isBlank() ||
+                request.getConfirmPassword() == null ||
+                request.getConfirmPassword().isBlank()) {
 
             throw new InvalidAuthRequestException(
                     "New password and confirm password are required"
