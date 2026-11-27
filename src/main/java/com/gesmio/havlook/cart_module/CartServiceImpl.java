@@ -82,24 +82,6 @@ public class CartServiceImpl implements CartService {
             String userIdentifier,
             CartItemAddRequestDTO request) {
 
-        Authentication authentication =
-                SecurityContextHolder.getContext().getAuthentication();
-
-        System.out.println("Authentication: " + authentication);
-        System.out.println("Authenticated: " +
-                (authentication != null && authentication.isAuthenticated()));
-
-        if (authentication != null) {
-            System.out.println("Principal: " +
-                    authentication.getPrincipal());
-
-            System.out.println("Authorities: " +
-                    authentication.getAuthorities());
-
-            System.out.println("Username: " +
-                    authentication.getName());
-        }
-
         if (request == null) {
             throw new InvalidCartQuantityException(
                     "Cart item request is required"

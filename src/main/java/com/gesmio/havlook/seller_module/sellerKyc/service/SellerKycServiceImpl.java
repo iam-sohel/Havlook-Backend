@@ -729,6 +729,27 @@ public class SellerKycServiceImpl implements SellerKycService {
                     "Only .pdf files are allowed"
             );
         }
+
+        // -----------------------------------------------------
+        // MAGIC BYTES (%PDF-)
+        // -----------------------------------------------------
+
+        try {
+            byte[] header = file.getBytes();
+            if (header.length < 4
+                    || header[0] != '%'
+                    || header[1] != 'P'
+                    || header[2] != 'D'
+                    || header[3] != 'F') {
+                throw new SellerKycValidationException(
+                        "Invalid PDF file content"
+                );
+            }
+        } catch (IOException e) {
+            throw new SellerKycValidationException(
+                    "Unable to read uploaded document"
+            );
+        }
     }
 
     // =========================================================
